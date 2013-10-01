@@ -212,6 +212,9 @@ static inline int gpio_cansleep(unsigned gpio)
 	return 0;
 }
 
+extern int __gpio_get_value(unsigned);
+extern void __gpio_set_value(unsigned, int);
+
 static inline int gpio_get_value_cansleep(unsigned gpio)
 {
 	might_sleep();

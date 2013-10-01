@@ -165,8 +165,12 @@ cflags-$(CONFIG_CPU_DADDI_WORKAROUNDS)	+= $(call cc-option,-mno-daddi,)
 
 ifdef CONFIG_CPU_SB1
 ifdef CONFIG_SB1_PASS_1_WORKAROUNDS
-KBUILD_AFLAGS_MODULE += -msb1-pass1-workarounds
-KBUILD_CFLAGS_MODULE += -msb1-pass1-workarounds
+#
+# -msb1-pass1-workarounds is only supported by Broadcom's Montavista toolchain
+# but not FSF gcc.
+#
+KBUILD_AFLAGS_MODULE += $(call cc-option,-msb1-pass1-workarounds)
+KBUILD_CFLAGS_MODULE += $(call cc-option,-msb1-pass1-workarounds)
 endif
 endif
 

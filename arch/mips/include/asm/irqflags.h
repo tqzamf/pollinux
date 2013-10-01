@@ -16,6 +16,66 @@
 #include <linux/compiler.h>
 #include <asm/hazards.h>
 
+#if defined(__GENERATING_BOUNDS_H) || defined(__GENERATING_OFFSETS_S)
+#define __TI_PRE_COUNT (-1)
+#else
+#include <asm/asm-offsets.h>
+#define __TI_PRE_COUNT TI_PRE_COUNT
+#endif
+
+
+/*
+ * Non-MIPS R2 processors executing functions such as arch_local_irq_disable()
+ * are not preempt-safe: if preemption occurs between the mfc0 and the mtc0,
+ * a stale status value may be stored.  To prevent this, we define
+ * here arch_local_preempt_disable() and arch_local_preempt_enable(), which
+ * are called before the mfc0 and after the mtc0, respectively.  A better
+ * solution would "#include <linux/preempt.h> and use its declared routines,
+ * but that is not viable due to numerous compile errors.
+ *
+ * MIPS R2 processors with the atomic interrupt enable/disable instructions
+ * (EI/DI) do not have this issue.
+ *
+ * Doing this in C leads to even more uglyness due to include file hell.
+ */
+
+static inline void arch_local_preempt_disable(void)
+{
+#if defined(CONFIG_PREEMPT) && !defined(CONFIG_CPU_MIPSR2)
+	__asm__ __volatile__(
+	"	.set	push						\n"
+	"	.set	noat						\n"
+	"	lw	$1, %[ti_pre_count]($28)			\n"
+	"	addi	$1, $1, 1					\n"
+	"	sw	$1, %[ti_pre_count]($28)			\n"
+	"	.set	pop						\n"
+	: /* no outputs */
+	: [ti_pre_count] "n" (__TI_PRE_COUNT)
+	: "memory");
+
+	barrier();
+#endif
+}
+
+static inline void arch_local_preempt_enable(void)
+{
+#if defined(CONFIG_PREEMPT) && !defined(CONFIG_CPU_MIPSR2)
+	__asm__ __volatile__(
+	"	.set	push						\n"
+	"	.set	noat						\n"
+	"	lw	$1, %[ti_pre_count]($28)			\n"
+	"	addi	$1, $1, -1					\n"
+	"	sw	$1, %[ti_pre_count]($28)			\n"
+	"	.set	pop						\n"
+	: /* no outputs */
+	: [ti_pre_count] "n" (__TI_PRE_COUNT)
+	: "memory");
+
+	barrier();
+#endif
+}
+
+
 __asm__(
 	"	.macro	arch_local_irq_enable				\n"
 	"	.set	push						\n"
@@ -99,11 +159,15 @@ __asm__(
 
 static inline void arch_local_irq_disable(void)
 {
+	arch_local_preempt_disable();
+
 	__asm__ __volatile__(
 		"arch_local_irq_disable"
 		: /* no outputs */
 		: /* no inputs */
 		: "memory");
+
+	arch_local_preempt_enable();
 }
 
 __asm__(
@@ -153,10 +217,15 @@ __asm__(
 static inline unsigned long arch_local_irq_save(void)
 {
 	unsigned long flags;
+
+	arch_local_preempt_disable();
+
 	asm volatile("arch_local_irq_save\t%0"
 		     : "=r" (flags)
 		     : /* no inputs */
 		     : "memory");
+
+	arch_local_preempt_enable();
 	return flags;
 }
 
@@ -214,23 +283,30 @@ static inline void arch_local_irq_restore(unsigned long flags)
 	if (unlikely(!(flags & 0x0400)))
 		smtc_ipi_replay();
 #endif
+	arch_local_preempt_disable();
 
 	__asm__ __volatile__(
 		"arch_local_irq_restore\t%0"
 		: "=r" (__tmp1)
 		: "0" (flags)
 		: "memory");
+
+	arch_local_preempt_enable();
 }
 
 static inline void __arch_local_irq_restore(unsigned long flags)
 {
 	unsigned long __tmp1;
 
+	arch_local_preempt_disable();
+
 	__asm__ __volatile__(
 		"arch_local_irq_restore\t%0"
 		: "=r" (__tmp1)
 		: "0" (flags)
 		: "memory");
+
+	arch_local_preempt_enable();
 }
 
 static inline int arch_irqs_disabled_flags(unsigned long flags)

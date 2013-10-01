@@ -1,0 +1,16 @@
+config NET_VENDOR_PMC_SIERRA
+        bool "PMC-Sierra devices"
+        default y
+        depends on PMC_YOSEMITE
+
+if NET_VENDOR_PMC_SIERRA
+
+config TITAN_GE
+	bool "PMC-Sierra TITAN Gigabit Ethernet Support"
+	depends on PMC_YOSEMITE
+        default y
+	help
+	  This enables support for the the integrated ethernet of
+	  PMC-Sierra's Titan SoC.
+
+endif # NET_VENDOR_PMC_SIERRA

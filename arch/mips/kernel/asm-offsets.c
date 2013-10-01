@@ -8,6 +8,7 @@
  * Kevin Kissell, kevink@mips.com and Carsten Langgaard, carstenl@mips.com
  * Copyright (C) 2000 MIPS Technologies, Inc.
  */
+#define __GENERATING_OFFSETS_S
 #include <linux/compat.h>
 #include <linux/types.h>
 #include <linux/sched.h>
