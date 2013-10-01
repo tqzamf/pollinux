@@ -9,7 +9,7 @@
 #if defined(CONFIG_HUGETLB_PAGE) && defined(CONFIG_PAGE_SIZE_64KB)
 # define SECTION_SIZE_BITS	29
 #else
-#define SECTION_SIZE_BITS       28
+# define SECTION_SIZE_BITS	28
 #endif
 #define MAX_PHYSMEM_BITS        35
 

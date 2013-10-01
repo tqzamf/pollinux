@@ -41,6 +41,7 @@ modules.builtin
 /linux
 /vmlinux
 /vmlinuz
+/uImage
 /System.map
 /Module.markers
 /Module.symvers
