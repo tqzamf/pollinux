@@ -227,7 +227,7 @@ static inline void dump_handler(const u32 *handler, int count)
 }
 
 #ifdef CONFIG_PNX8550
-static void il_beq(u32 **p, struct reloc **r, unsigned int reg1,
+static void il_beq(u32 **p, struct uasm_reloc **r, unsigned int reg1,
 		   unsigned int reg2, enum label_id l)
 {
 	r_mips_pc16(r, *p, l);
@@ -383,36 +383,36 @@ static void __cpuinit build_restore_work_registers(u32 **p)
 extern unsigned long pgd_current[];
 
 #ifdef CONFIG_PNX8550
-static void __init build_pnx8550_bug_fix( u32 **p, struct label **l, struct reloc **r)
+static void __init build_pnx8550_bug_fix( u32 **p, struct uasm_label **l, struct uasm_reloc **r)
 {
 	/* load epc and badvaddr to k0 and k1 */
-	i_MFC0(p, K0, C0_EPC);
-    i_MFC0(p, K1, C0_BADVADDR);
+	UASM_i_MFC0(p, K0, C0_EPC);
+    UASM_i_MFC0(p, K1, C0_BADVADDR);
 
 	/* branch if code entry  */
 	il_beq(p, r, K0, K1, label_pnx8550_bac_reset);
-	i_addiu(p, K0, K0, 4);
+	uasm_i_addiu(p, K0, K0, 4);
 
 	/* branch if code entry in BDS */
 	il_beq(p, r, K0, K1, label_pnx8550_bac_reset);
-	i_nop(p);
+	uasm_i_nop(p);
 	/* Write data tlb entry 11..31 */
-	i_tlbwr(p);
-	i_eret(p);
+	uasm_i_tlbwr(p);
+	uasm_i_eret(p);
 	/* BAC Reset */
 	l_pnx8550_bac_reset(l, *p);
-	i_MFC0(p, K0, C0_CONFIGPR);
-	i_ori(p, K0, K0, (1<<14));
-	i_MTC0(p, K0, C0_CONFIGPR);
+	UASM_i_MFC0(p, K0, C0_CONFIGPR);
+	uasm_i_ori(p, K0, K0, (1<<14));
+	UASM_i_MTC0(p, K0, C0_CONFIGPR);
 
 	/* read random reg, sub 11, div by 2 */
-	i_MFC0(p, K1, C0_RANDOM);
-	i_addiu(p, K1, K1, -11);
-	i_srl(p, K1, K1, 1);
+	UASM_i_MFC0(p, K1, C0_RANDOM);
+	uasm_i_addiu(p, K1, K1, -11);
+	uasm_i_srl(p, K1, K1, 1);
 
 	/* use as index for tlbwi */
-	i_MTC0(p, K1, C0_INDEX);
-	i_tlbwi(p);
+	UASM_i_MTC0(p, K1, C0_INDEX);
+	uasm_i_tlbwi(p);
 }
 #endif
 
