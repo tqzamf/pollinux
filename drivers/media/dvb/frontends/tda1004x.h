@@ -109,6 +109,9 @@ enum tda1004x_demod {
 };
 
 struct tda1004x_state {
+   	__u32 frequency;     /* (absolute) frequency in Hz for QAM/OFDM/ATSC */
+                         /* intermediate frequency in kHz for QPSK */
+
 	struct i2c_adapter* i2c;
 	const struct tda1004x_config* config;
 	struct dvb_frontend frontend;

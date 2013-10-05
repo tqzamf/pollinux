@@ -340,6 +340,16 @@ config VIDEO_SAA711X
 	  To compile this driver as a module, choose M here: the
 	  module will be called saa7115.
 
+config VIDEO_SAA7117
+	tristate "Philips SAA7117 support"
+	depends on I2C
+	---help---
+	  This is a driver for Philips SAA7117
+	  TV cards.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called saa7117.
+
 config VIDEO_SAA7191
 	tristate "Philips SAA7191 video decoder"
 	depends on VIDEO_V4L2 && I2C

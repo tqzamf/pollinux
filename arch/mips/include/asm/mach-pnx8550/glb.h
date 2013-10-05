@@ -22,6 +22,15 @@
 #ifndef __PNX8550_GLB_H
 #define __PNX8550_GLB_H
 
+/** MMIO base address, mapped into uncached virtual memory. */
+extern void *phStbMmio_Base;
+
+#define PNX8550_MMIO_BASE_ADDR 0x1BE00000
+#define PNX8550_MMIO_SIZE        (2UL * 1024UL * 1024UL)
+
+/** Access the value of a MMIO register. */
+#define MMIO(offset) (*((volatile unsigned long*)(((unsigned long)phStbMmio_Base) + (offset)) ))
+
 #define PNX8550_GLB1_BASE	0xBBE63000
 #define PNX8550_GLB2_BASE	0xBBE4d000
 #define PNX8550_RESET_BASE      0xBBE60000
@@ -41,17 +50,19 @@
 #define PNX8550_GLB_ENABLE_INTA_O 0x1
 
 /* PCI Direct Mappings */
-#define PNX8550_PCIMEM	        0x12000000
-#define PNX8550_PCIMEM_SIZE	0x08000000
-#define PNX8550_PCIIO	        0x1c000000
+#define PNX8550_PCIMEM          0x20000000
+#define PNX8550_PCIMEM_SIZE     0x06000000	/* 96M */
+#define PNX8550_PCIIO           0x26000000
 #define PNX8550_PCIIO_SIZE	0x02000000	/* 32M */
+
 
 #define PNX8550_PORT_BASE	KSEG1
 
 // GPIO def
-#define PNX8550_GPIO_BASE	0x1Be00000
+#define PNX8550_GPIO_BASE	PNX8550_MMIO_BASE_ADDR
 
 #define PNX8550_GPIO_DIRQ0	 (PNX8550_GPIO_BASE + 0x104500)
+#define PNX8550_GPIO_DIRQ(x)	 (0x104500 + ((x)*4))
 #define PNX8550_GPIO_MC1         (PNX8550_GPIO_BASE + 0x104004)
 #define PNX8550_GPIO_MC_31_BIT   30
 #define PNX8550_GPIO_MC_30_BIT   28

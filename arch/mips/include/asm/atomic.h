@@ -20,6 +20,8 @@
 #include <asm/cpu-features.h>
 #include <asm/cmpxchg.h>
 #include <asm/war.h>
+#include <asm/types.h>
+#include <asm/addrspace.h>
 
 #define ATOMIC_INIT(i)    { (i) }
 
@@ -39,6 +41,12 @@
  * Atomically sets the value of @v to @i.
  */
 #define atomic_set(v, i)		((v)->counter = (i))
+
+/*
+ * Check for cached memory locations as the ll/sc commands are only
+ * reliable on this type of memory
+*/
+#define is_cached_memory(mem) ((((u32)(mem))&KSEG1)!=KSEG1)
 
 /*
  * atomic_add - add integer to atomic variable

@@ -63,6 +63,7 @@
 #define SIZE_32M                 0x4
 #define SIZE_64M                 0x5
 #define SIZE_128M                0x6
+#define SIZE_256M                0x7
 #define PCI_SETUP_BASE18_SIZE(X) (X<<18)
 #define PCI_SETUP_BASE18_EN      (1<<17)
 #define PCI_SETUP_BASE14_PREF    (1<<16)

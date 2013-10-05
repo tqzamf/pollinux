@@ -916,6 +916,23 @@ static int get_min_max_with_quirks(struct usb_mixer_elem_info *cval,
 			set_cur_mix_value(cval, minchn, 0, saved);
 		}
 
+		/* 
+		 * Some devices report a current volume which is outwith the min max range
+		 * they claim to support e.g. Bose Companion 5. Bounds check the current setting.
+		 */
+		{
+			int val;
+			get_cur_mix_value(cval, minchn, &val);
+			if(val > cval->max)
+			{
+				set_cur_mix_value(cval, minchn, 0, cval->max);
+			}
+			else if(val < cval->min)
+			{
+				set_cur_mix_value(cval, minchn, 0, cval->min);
+			}
+		}
+		
 		cval->initialized = 1;
 	}
 

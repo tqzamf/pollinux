@@ -375,6 +375,11 @@ retry:
 #endif
 		printk("VFS: Cannot open root device \"%s\" or %s: error %d\n",
 				root_device_name, b, err);
+		printk("Waiting for root device to become available....\n");
+		current->state = TASK_INTERRUPTIBLE;
+		schedule_timeout(3 * HZ);
+		goto retry;
+	
 		printk("Please append a correct \"root=\" boot option; here are the available partitions:\n");
 
 		printk_all_partitions();
