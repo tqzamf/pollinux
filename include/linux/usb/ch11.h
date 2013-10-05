@@ -11,6 +11,28 @@
 
 #include <linux/types.h>	/* __u8 etc */
 
+/* Define to enable support of NXP embedded host compliance test */
+#define EMBD_HOST_COMPLIANCE
+
+#ifdef EMBD_HOST_COMPLIANCE
+
+#define USB_TEST_MODE_VID				0x1A0A
+
+#define USB_TEST_SE0_NAK_PID			0x0101
+#define USB_TEST_J_PID					0x0102
+#define USB_TEST_K_PID					0x0103
+#define USB_TEST_PACKET_PID				0x0104
+#define USB_TEST_FORCE_ENABLE_PID		0x0105
+#define USB_TEST_SUSPEND_AND_RESUME_PID	0x0106
+
+
+// Philips USB storage card for testing
+//#define USB_TEST_MODE_VID				0x0204
+//#define USB_TEST_PACKET_PID			0x6025
+
+#endif
+
+
 /*
  * Hub request types
  */
@@ -61,6 +83,15 @@
 #define USB_PORT_FEAT_TEST              21
 #define USB_PORT_FEAT_INDICATOR         22
 #define USB_PORT_FEAT_C_PORT_L1         23
+
+/* Used to support NXP Host compliance testing */
+#ifdef EMBD_HOST_COMPLIANCE
+#define USB_PORT_FEAT_TEST_J            23
+#define USB_PORT_FEAT_TEST_K            24
+#define USB_PORT_FEAT_TEST_SE0_NAK      25
+#define USB_PORT_FEAT_TEST_PACKET       26
+#define USB_PORT_FEAT_TEST_FORCE_ENABLE 27
+#endif /* EMBD_HOST_COMPLIANCE */
 
 /*
  * Port feature selectors added by USB 3.0 spec.

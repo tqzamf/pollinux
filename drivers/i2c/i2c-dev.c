@@ -493,10 +493,30 @@ static int i2cdev_open(struct inode *inode, struct file *file)
 	return 0;
 }
 
+static int i2cdev_fasync(int fd, struct file *file, int on)
+{
+  struct i2c_client *client = (struct i2c_client *)file->private_data;
+	int ret;
+
+	if (!client)
+	{
+		return -EBADFD;
+	}
+
+	if ((ret = fasync_helper(fd, file, on, &client->adapter->fasync)) < 0)
+	{
+		return ret;
+	}
+	return 0;
+}
+
+
+
 static int i2cdev_release(struct inode *inode, struct file *file)
 {
 	struct i2c_client *client = file->private_data;
 
+  i2cdev_fasync(-1, file, 0);
 	i2c_put_adapter(client->adapter);
 	kfree(client);
 	file->private_data = NULL;
@@ -512,6 +532,7 @@ static const struct file_operations i2cdev_fops = {
 	.unlocked_ioctl	= i2cdev_ioctl,
 	.open		= i2cdev_open,
 	.release	= i2cdev_release,
+	.fasync		= i2cdev_fasync,
 };
 
 /* ------------------------------------------------------------------------- */

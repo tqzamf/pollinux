@@ -2261,6 +2261,22 @@ config FB_VIRTUAL
 	  the vfb_enable=1 option.
 
 	  If unsure, say N.
+	  
+config VIDEODENC
+	tristate "Support for Video Denc devices"
+	---help---
+	  The video denc device provides an abstraction for the video denc
+	  hardware. It represents the video outputs of some video hardware and
+	  allows application software to access the video denc hardware through
+	  a well-defined interface, so the software doesn't need to know
+	  anything about the low-level (hardware register) stuff.
+
+	  Video Denc devices work identically across the different
+	  architectures supported by Linux and make the implementation of
+	  application programs easier and more portable.
+
+	  The device is accessed through special device nodes, usually located
+	  in the /dev directory, i.e. /dev/vdenc*.
 
 config XEN_FBDEV_FRONTEND
 	tristate "Xen virtual frame buffer support"

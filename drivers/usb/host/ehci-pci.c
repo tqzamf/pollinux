@@ -35,6 +35,17 @@ static int ehci_pci_reinit(struct ehci_hcd *ehci, struct pci_dev *pdev)
 	/* we expect static quirk code to handle the "extended capabilities"
 	 * (currently just BIOS handoff) allowed starting with EHCI 0.96
 	 */
+	
+	ehci_dbg(ehci, "VENDOR %04x  DEVICE %04x\n", pdev->vendor, pdev->device);
+	if((PCI_VENDOR_ID_PHILIPS == pdev->vendor) && (0x1562 == pdev->device))
+	{
+		// Reset retry count
+		u32 temp;
+		pci_read_config_dword(pdev, 0x40, &temp);
+		ehci_dbg(ehci, "EHCI RESET RETRY COUNT to 0 from %08x\n", temp);
+
+		pci_write_config_dword(pdev, 0x40, 0x0000);
+	}
 
 	/* PCI Memory-Write-Invalidate cycle support is optional (uncommon) */
 	retval = pci_set_mwi(pdev);

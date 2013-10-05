@@ -75,6 +75,8 @@ static const char	hcd_name [] = "ohci_hcd";
 
 #define	STATECHANGE_DELAY	msecs_to_jiffies(300)
 
+#define OHCI_VERBOSE_DEBUG
+
 #include "ohci.h"
 #include "pci-quirks.h"
 
@@ -1034,7 +1036,7 @@ MODULE_LICENSE ("GPL");
 #define PLATFORM_DRIVER		ohci_hcd_au1xxx_driver
 #endif
 
-#ifdef CONFIG_PNX8550
+#ifdef CONFIG_USB_PNX8550_HCD
 #include "ohci-pnx8550.c"
 #define PLATFORM_DRIVER		ohci_hcd_pnx8550_driver
 #endif
