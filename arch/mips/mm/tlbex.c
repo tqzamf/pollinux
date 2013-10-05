@@ -160,6 +160,9 @@ enum label_id {
 #ifdef CONFIG_HUGETLB_PAGE
 	label_tlb_huge_update,
 #endif
+#ifdef CONFIG_PNX8550
+	label_pnx8550_bac_reset
+#endif
 };
 
 UASM_L_LA(_second_part)
@@ -178,6 +181,9 @@ UASM_L_LA(_r3000_write_probe_fail)
 UASM_L_LA(_large_segbits_fault)
 #ifdef CONFIG_HUGETLB_PAGE
 UASM_L_LA(_tlb_huge_update)
+#endif
+#ifdef CONFIG_PNX8550
+UASM_L_LA(_pnx8550_bac_reset)
 #endif
 
 static int __cpuinitdata hazard_instance;
@@ -220,12 +226,24 @@ static inline void dump_handler(const u32 *handler, int count)
 	pr_debug("\t.set pop\n");
 }
 
+#ifdef CONFIG_PNX8550
+static void il_beq(u32 **p, struct reloc **r, unsigned int reg1,
+		   unsigned int reg2, enum label_id l)
+{
+	r_mips_pc16(r, *p, l);
+	i_beq(p, reg1, reg2, 0);
+}
+#endif
+
+
 /* The only general purpose registers allowed in TLB handlers. */
 #define K0		26
 #define K1		27
 
 /* Some CP0 registers */
 #define C0_INDEX	0, 0
+#define C0_RANDOM 1, 0
+
 #define C0_ENTRYLO0	2, 0
 #define C0_TCBIND	2, 2
 #define C0_ENTRYLO1	3, 0
@@ -234,6 +252,7 @@ static inline void dump_handler(const u32 *handler, int count)
 #define C0_BADVADDR	8, 0
 #define C0_ENTRYHI	10, 0
 #define C0_EPC		14, 0
+#define C0_CONFIGPR	16, 7
 #define C0_XCONTEXT	20, 0
 
 #ifdef CONFIG_64BIT
@@ -362,6 +381,41 @@ static void __cpuinit build_restore_work_registers(u32 **p)
  * conflicts for tlbmiss_handler_setup_pgd
  */
 extern unsigned long pgd_current[];
+
+#ifdef CONFIG_PNX8550
+static void __init build_pnx8550_bug_fix( u32 **p, struct label **l, struct reloc **r)
+{
+	/* load epc and badvaddr to k0 and k1 */
+	i_MFC0(p, K0, C0_EPC);
+    i_MFC0(p, K1, C0_BADVADDR);
+
+	/* branch if code entry  */
+	il_beq(p, r, K0, K1, label_pnx8550_bac_reset);
+	i_addiu(p, K0, K0, 4);
+
+	/* branch if code entry in BDS */
+	il_beq(p, r, K0, K1, label_pnx8550_bac_reset);
+	i_nop(p);
+	/* Write data tlb entry 11..31 */
+	i_tlbwr(p);
+	i_eret(p);
+	/* BAC Reset */
+	l_pnx8550_bac_reset(l, *p);
+	i_MFC0(p, K0, C0_CONFIGPR);
+	i_ori(p, K0, K0, (1<<14));
+	i_MTC0(p, K0, C0_CONFIGPR);
+
+	/* read random reg, sub 11, div by 2 */
+	i_MFC0(p, K1, C0_RANDOM);
+	i_addiu(p, K1, K1, -11);
+	i_srl(p, K1, K1, 1);
+
+	/* use as index for tlbwi */
+	i_MTC0(p, K1, C0_INDEX);
+	i_tlbwi(p);
+}
+#endif
+
 
 /*
  * The R3000 TLB handler is simple.
@@ -1304,8 +1358,12 @@ static void __cpuinit build_r4000_tlb_refill_handler(void)
 
 		build_get_ptep(&p, K0, K1);
 		build_update_entries(&p, K0, K1);
+#ifndef CONFIG_PNX8550
 		build_tlb_write_entry(&p, &l, &r, tlb_random);
 		uasm_l_leave(&l, p);
+#else
+	build_pnx8550_bug_fix(&p, &l, &r);
+#endif
 		uasm_i_eret(&p); /* return from trap */
 	}
 #ifdef CONFIG_HUGETLB_PAGE

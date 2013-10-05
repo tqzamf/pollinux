@@ -16,7 +16,9 @@
 #include <int.h>
 
 char pnx8550_irq_tab[][5] __initdata = {
-	[8]	= { -1, PNX8550_INT_PCI_INTA, 0xff, 0xff, 0xff},
-	[9]	= { -1, PNX8550_INT_PCI_INTA, 0xff, 0xff, 0xff},
-	[10]	= { -1, PNX8550_INT_PCI_INTA, 0xff, 0xff, 0xff},
+  [8] = { -1, PNX8550_INT_PCI_INTA, 0xff, 0xff, 0xff}, /* SATA Controller */
+  [9] = { -1, PNX8550_INT_PCI_INTA, 0xff, 0xff, 0xff}, /* USB COntroller */
+  [10] = { -1, PNX8550_INT_PCI_INTA, 0xff, 0xff, 0xff}, /* Ethernet Controller */
+  [11] = { -1, PNX8550_INT_PCI_INTA, 0xff, 0xff, 0xff}, /* External PCI Slot */
+  [12] = { -1, PNX8550_INT_PCI_INTA, 0xff, 0xff, 0xff}, /* Mini PCI Slot */
 };

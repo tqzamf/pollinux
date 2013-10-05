@@ -37,6 +37,8 @@
 #include <asm/dsp.h>
 
 #include "signal-common.h"
+#include "user_backtrace.h"
+
 
 static int (*save_fp_context)(struct sigcontext __user *sc);
 static int (*restore_fp_context)(struct sigcontext __user *sc);
@@ -375,6 +377,7 @@ asmlinkage void sys_sigreturn(nabi_no_regargs struct pt_regs regs)
 	/* Unreached */
 
 badframe:
+	user_backtrace(&regs);
 	force_sig(SIGSEGV, current);
 }
 #endif /* CONFIG_TRAD_SIGNALS */
@@ -415,6 +418,7 @@ asmlinkage void sys_rt_sigreturn(nabi_no_regargs struct pt_regs regs)
 	/* Unreached */
 
 badframe:
+	user_backtrace(&regs);
 	force_sig(SIGSEGV, current);
 }
 

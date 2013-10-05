@@ -385,7 +385,13 @@ void __cpuinit tlb_init(void)
 	 *     be set to fixed-size pages.
 	 */
 	write_c0_pagemask(PM_DEFAULT_MASK);
+	
+#ifdef CONFIG_SOC_PNX8550
+	write_c0_wired(11);
+#else
 	write_c0_wired(0);
+#endif
+
 	if (current_cpu_type() == CPU_R10000 ||
 	    current_cpu_type() == CPU_R12000 ||
 	    current_cpu_type() == CPU_R14000)

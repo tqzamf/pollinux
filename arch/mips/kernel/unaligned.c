@@ -85,6 +85,8 @@
 #include <asm/cop2.h>
 #include <asm/inst.h>
 #include <asm/uaccess.h>
+#include "user_backtrace.h"
+
 
 #define STR(x)  __STR(x)
 #define __STR(x)  #x
@@ -493,12 +495,14 @@ fault:
 		return;
 
 	die_if_kernel("Unhandled kernel unaligned access", regs);
+	user_backtrace(regs);
 	force_sig(SIGSEGV, current);
 
 	return;
 
 sigbus:
 	die_if_kernel("Unhandled kernel unaligned access", regs);
+	user_backtrace(regs);
 	force_sig(SIGBUS, current);
 
 	return;
@@ -544,6 +548,7 @@ asmlinkage void do_ade(struct pt_regs *regs)
 
 sigbus:
 	die_if_kernel("Kernel unaligned instruction access", regs);
+	user_backtrace(regs);
 	force_sig(SIGBUS, current);
 
 	/*

@@ -111,6 +111,26 @@ void __init plat_mem_setup(void)
 	*/
 	PNX8550_GLB2_ENAB_INTA_O = 0;
 
+    /* Setup CMEM Registers */
+    /* CMEM0 = MMIO */
+    write_c0_diag4((0x1be00000 & PR4450_CMEMF_BBA) |
+                   (PR4450_CMEM_SIZE_2MB << PR4450_CMEMB_SIZE) |
+                   (1 << PR4450_CMEMB_VALID));
+
+    /* CMEM1 = XIO */
+    write_c0_diag5((0x10000000 & PR4450_CMEMF_BBA) |
+                   (PR4450_CMEM_SIZE_128MB << PR4450_CMEMB_SIZE) |
+                   (1 << PR4450_CMEMB_VALID));
+
+    /* CMEM2 = PCI */
+    write_c0_diag6((0x20000000 & PR4450_CMEMF_BBA) |
+                   (PR4450_CMEM_SIZE_128MB << PR4450_CMEMB_SIZE) |
+                   (1 << PR4450_CMEMB_VALID));
+
+    /* CMEM3 = Not used */
+    write_c0_diag7(0);
+
+
 	/* IO/MEM resources. */
 	set_io_port_base(PNX8550_PORT_BASE);
 	ioport_resource.start = 0;

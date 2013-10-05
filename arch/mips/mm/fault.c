@@ -25,6 +25,7 @@
 #include <asm/uaccess.h>
 #include <asm/ptrace.h>
 #include <asm/highmem.h>		/* For VMALLOC_END */
+#include "../kernel/user_backtrace.h"
 #include <linux/kdebug.h>
 
 /*
@@ -197,7 +198,7 @@ bad_area_nosemaphore:
 	if (user_mode(regs)) {
 		tsk->thread.cp0_badvaddr = address;
 		tsk->thread.error_code = write;
-#if 0
+#if 1
 		printk("do_page_fault() #2: sending SIGSEGV to %s for "
 		       "invalid %s\n%0*lx (epc == %0*lx, ra == %0*lx)\n",
 		       tsk->comm,
@@ -210,6 +211,7 @@ bad_area_nosemaphore:
 		info.si_errno = 0;
 		/* info.si_code has been set above */
 		info.si_addr = (void __user *) address;
+		user_backtrace(regs);
 		force_sig_info(SIGSEGV, &info, tsk);
 		return;
 	}
@@ -253,7 +255,7 @@ do_sigbus:
 	 * Send a sigbus, regardless of whether we were in kernel
 	 * or user mode.
 	 */
-#if 0
+#if 1
 		printk("do_page_fault() #3: sending SIGBUS to %s for "
 		       "invalid %s\n%0*lx (epc == %0*lx, ra == %0*lx)\n",
 		       tsk->comm,
@@ -267,6 +269,7 @@ do_sigbus:
 	info.si_errno = 0;
 	info.si_code = BUS_ADRERR;
 	info.si_addr = (void __user *) address;
+	user_backtrace(regs);
 	force_sig_info(SIGBUS, &info, tsk);
 
 	return;

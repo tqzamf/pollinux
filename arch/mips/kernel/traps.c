@@ -52,6 +52,7 @@
 #include <asm/mmu_context.h>
 #include <asm/types.h>
 #include <asm/stacktrace.h>
+#include "user_backtrace.h"
 #include <asm/uasm.h>
 
 extern void check_wait(void);
@@ -177,7 +178,6 @@ static void show_stacktrace(struct task_struct *task,
 		i++;
 	}
 	printk("\n");
-	show_backtrace(task, regs);
 }
 
 void show_stack(struct task_struct *task, unsigned long *sp)
@@ -201,7 +201,7 @@ void show_stack(struct task_struct *task, unsigned long *sp)
 			prepare_frametrace(&regs);
 		}
 	}
-	show_stacktrace(task, &regs);
+	show_backtrace(task, &regs);
 }
 
 /*
@@ -358,9 +358,31 @@ void show_registers(struct pt_regs *regs)
 	}
 
 	show_stacktrace(current, regs);
+	show_backtrace(current, regs);
 	show_code((unsigned int __user *) regs->cp0_epc);
 	printk("\n");
 }
+
+#ifdef CONFIG_DEBUG_USER
+void user_backtrace_impl(struct pt_regs *regs, const char *file, int line)
+{
+	// Bump up the log level so that we can make sure all this
+	// comes out on the serial port. This is bad because it takes
+	// immediate effect but we can't risk setting it back
+	// afterwards because we risk not getting all the output - see
+	// comments regarding deferred printk in kernel/printk.c.
+	console_loglevel = 6; // KERN_INFO
+	
+	printk(KERN_ERR "User space fault from %s:%d\nProcess %s (pid: %d, threadinfo=%p, task=%p)\n",
+	       file, line, current->comm, current->pid, current_thread_info(), current);
+	show_regs(regs);
+	show_stacktrace(current, regs);
+	show_code((unsigned int *) regs->cp0_epc);
+	printk("\n");
+	
+}
+#endif // CONFIG_DEBUG_USER
+
 
 static int regs_to_trapnr(struct pt_regs *regs)
 {
@@ -470,6 +492,7 @@ asmlinkage void do_be(struct pt_regs *regs)
 		return;
 
 	die_if_kernel("Oops", regs);
+	user_backtrace(regs);
 	force_sig(SIGBUS, current);
 }
 
@@ -667,6 +690,11 @@ asmlinkage void do_ov(struct pt_regs *regs)
 	info.si_signo = SIGFPE;
 	info.si_errno = 0;
 	info.si_addr = (void __user *) regs->cp0_epc;
+#ifdef CONFIG_DEBUG_USER
+	printk(KERN_ALERT "Integer overflow, epc=%08lx, ra=%08lx\n",
+	       regs->cp0_epc, regs->regs[31]);
+#endif
+	user_backtrace(regs);
 	force_sig_info(SIGFPE, &info, current);
 }
 
@@ -912,6 +940,10 @@ asmlinkage void do_ri(struct pt_regs *regs)
 
 	if (unlikely(status > 0)) {
 		regs->cp0_epc = old_epc;		/* Undo skip-over.  */
+	#ifdef CONFIG_USER_DEBUG
+		printk(KERN_ALERT "Reserved instruction exception (do_ri), epc == %08lx, ra == %08lx\n", regs->cp0_epc, regs->regs[31]);
+	#endif
+		user_backtrace(regs);
 		force_sig(status, current);
 	}
 }
@@ -1015,6 +1047,7 @@ asmlinkage void do_cpu(struct pt_regs *regs)
 
 		if (unlikely(status > 0)) {
 			regs->cp0_epc = old_epc;	/* Undo skip-over.  */
+			user_backtrace(regs);
 			force_sig(status, current);
 		}
 
@@ -1063,11 +1096,19 @@ asmlinkage void do_cpu(struct pt_regs *regs)
 		return;
 	}
 
+#ifdef CONFIG_USER_DEBUG
+	printk(KERN_ALERT "Reserved instruction exception (do_cpu), epc == %08lx, ra == %08lx\n", regs->cp0_epc, regs->regs[31]);
+#endif
+	user_backtrace(regs);
 	force_sig(SIGILL, current);
 }
 
 asmlinkage void do_mdmx(struct pt_regs *regs)
 {
+#ifdef CONFIG_USER_DEBUG
+	printk(KERN_ALERT "Reserved instruction exception (do_mdmx), epc == %08lx, ra == %08lx\n", regs->cp0_epc, regs->regs[31]);
+#endif
+	user_backtrace(regs);
 	force_sig(SIGILL, current);
 }
 
@@ -1161,6 +1202,10 @@ asmlinkage void do_mt(struct pt_regs *regs)
 	}
 	die_if_kernel("MIPS MT Thread exception in kernel", regs);
 
+#ifdef CONFIG_USER_DEBUG
+	printk(KERN_ALERT "Reserved instruction exception (do_mt), epc == %08lx, ra == %08lx\n", regs->cp0_epc, regs->regs[31]);
+#endif
+	user_backtrace(regs);
 	force_sig(SIGILL, current);
 }
 
@@ -1170,6 +1215,10 @@ asmlinkage void do_dsp(struct pt_regs *regs)
 	if (cpu_has_dsp)
 		panic("Unexpected DSP exception");
 
+#ifdef CONFIG_USER_DEBUG
+	printk(KERN_ALERT "Reserved instruction exception (do_dsp), epc == %08lx, ra == %08lx\n", regs->cp0_epc, regs->regs[31]);
+#endif
+	user_backtrace(regs);
 	force_sig(SIGILL, current);
 }
 

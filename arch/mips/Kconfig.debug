@@ -129,3 +129,10 @@ config SPINLOCK_TEST
 	  Add several files to the debugfs to test spinlock speed.
 
 endmenu
+
+config DEBUG_USER
+	bool "Debug information for userspace processes"
+	help
+	  If you say Y here then userspace exceptions such as SIGSEGV
+	  and SIGILL will generate register and stack dumps when they
+	  occur to aid debugging.
