@@ -40,7 +40,7 @@ extern void pnx8550_setupDisplay(int pal, int high_mem, unsigned int background)
 #endif
 void *phStbMmio_Base;
 
-static char my_cmdline[COMMAND_LINE_SIZE] = {"console=ttyS1"};
+//static char my_cmdline[COMMAND_LINE_SIZE] = {"console=ttyS1 stb810_display=pal"};
 
 const char *get_system_type(void)
 {
@@ -64,10 +64,10 @@ void __init prom_init(void)
     char * background_param;
 
     set_io_port_base(KSEG1);
-    printk("PNX8550: prom_init called!\n");
+    printk("PNX8550: prom_init called! %d\n", HAVE_SD_DISPLAY);
 
     /* Check argc count, and if a cmd line was passed copy it to the arcs cmdline */
-    if (fw_arg0 == 1)
+    /*if (fw_arg0 == 1)
     {
         char **argv= (char**)fw_arg1;
         strcpy(arcs_cmdline, argv[0]);
@@ -75,8 +75,12 @@ void __init prom_init(void)
     else
     {
         strcpy(arcs_cmdline, my_cmdline);
-    }
+    }*/
+    prom_argc = (int) fw_arg0;
+    prom_argv = (char **) fw_arg1;
+    prom_envp = (char **) fw_arg2;
 
+    prom_init_cmdline();
     /* Determine the amount of memory to allocate to the kernel, and do so. */
     mem_size = get_system_mem_size() / (1024 * 1024);
 #ifndef STB810_MIPS_MEM_SIZE
@@ -116,6 +120,7 @@ void __init prom_init(void)
         background_param += 18;
         background = (unsigned int) simple_strtol(background_param, NULL, 0);
     }
+    printk("PNX8550: CMD: %s", argptr);
 #endif // HAVE_SD_DISPLAY
     
     /* Setup MMIO region */
@@ -126,6 +131,7 @@ void __init prom_init(void)
     }
 
 #if HAVE_SD_DISPLAY
+    printk("PNX8550: Setup DIsplay: %d (Pal: %d, BG: %d)", setup_display, pal, background);
     if(setup_display)
     {
         pnx8550_setupDisplay(pal, (mem_size >= 256), background);

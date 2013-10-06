@@ -1,7 +1,7 @@
 
 # Makefile for the NXP STB810 Board.
 
-obj-y := prom_init.o board_setup.o irqmap.o
+obj-y := init.o board_setup.o irqmap.o gif.o splash.o 
 
 #If we have defined anv ENV variable called STB810_MIPS_MEM_SIZE then pass it on to the
 #C code
