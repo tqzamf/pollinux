@@ -386,6 +386,7 @@ struct i2c_adapter {
 	int nr;
 	char name[48];
 	struct completion dev_released;
+	struct fasync_struct *fasync;
 
 	struct mutex userspace_clients_lock;
 	struct list_head userspace_clients;
@@ -424,6 +425,8 @@ void i2c_unlock_adapter(struct i2c_adapter *);
 #define I2C_CLIENT_TEN	0x10		/* we have a ten bit chip address */
 					/* Must equal I2C_M_TEN below */
 #define I2C_CLIENT_WAKE	0x80		/* for board_info; true iff can wake */
+
+#define I2C_FASYNC      0x20
 
 /* i2c adapter classes (bitmask) */
 #define I2C_CLASS_HWMON		(1<<0)	/* lm_sensors, ... */
@@ -615,5 +618,10 @@ union i2c_smbus_data {
 #define I2C_SMBUS_I2C_BLOCK_BROKEN  6
 #define I2C_SMBUS_BLOCK_PROC_CALL   7		/* SMBus 2.0 */
 #define I2C_SMBUS_I2C_BLOCK_DATA    8
+
+#define I2C_SET_SLAVE_ADDRESS     0x0730
+#define I2C_SET_SLAVE_ENABLE      0x0731
+#define I2C_GET_SLAVE_DATA        0x0732
+
 
 #endif /* _LINUX_I2C_H */

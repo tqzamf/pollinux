@@ -27,7 +27,7 @@
 #include <linux/kernel.h>
 #include <asm/mach-pnx8550/glb.h>
 
-#define HAVE_SD_DISPLAY 0
+#define HAVE_SD_DISPLAY 1
 
 int prom_argc;
 char **prom_argv, **prom_envp;
@@ -40,7 +40,7 @@ extern void pnx8550_setupDisplay(int pal, int high_mem, unsigned int background)
 #endif
 void *phStbMmio_Base;
 
-static char my_cmdline[CL_SIZE] = {"console=ttyS1"};
+static char my_cmdline[COMMAND_LINE_SIZE] = {"console=ttyS1"};
 
 const char *get_system_type(void)
 {
@@ -64,6 +64,7 @@ void __init prom_init(void)
     char * background_param;
 
     set_io_port_base(KSEG1);
+    printk("PNX8550: prom_init called!\n");
 
     /* Check argc count, and if a cmd line was passed copy it to the arcs cmdline */
     if (fw_arg0 == 1)
@@ -75,10 +76,6 @@ void __init prom_init(void)
     {
         strcpy(arcs_cmdline, my_cmdline);
     }
-
-    /*Setup Group and Board*/
-    mips_machgroup = MACH_GROUP_PHILIPS;
-    mips_machtype = MACH_PHILIPS_STB810;
 
     /* Determine the amount of memory to allocate to the kernel, and do so. */
     mem_size = get_system_mem_size() / (1024 * 1024);
@@ -132,7 +129,8 @@ void __init prom_init(void)
     if(setup_display)
     {
         pnx8550_setupDisplay(pal, (mem_size >= 256), background);
-//        printk("Setting initial splash screen display mode %s\n", pal ? "SD (50Hz)" : "SD (60Hz)");
+        printk("Setting initial splash screen display mode %s\n", pal ? "SD (50Hz)" : "SD (60Hz)");
+        printk("!!!!!!!!!\n");
     }
 #endif
 }

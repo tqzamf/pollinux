@@ -606,7 +606,7 @@ static int dvb_dmxdev_start_feed(struct dmxdev *dmxdev,
 	else if (otype == DMX_OUT_TAP)
 		ts_type |= TS_PACKET | TS_DEMUX | TS_PAYLOAD_ONLY;
 
-#endifss
+#endif
 
 	ret = dmxdev->demux->allocate_ts_feed(dmxdev->demux, &feed->ts,
 					      dvb_dmxdev_ts_callback);

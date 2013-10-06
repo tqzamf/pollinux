@@ -230,8 +230,8 @@ static inline void dump_handler(const u32 *handler, int count)
 static void il_beq(u32 **p, struct uasm_reloc **r, unsigned int reg1,
 		   unsigned int reg2, enum label_id l)
 {
-	r_mips_pc16(r, *p, l);
-	i_beq(p, reg1, reg2, 0);
+	uasm_r_mips_pc16(r, *p, l);
+	uasm_i_beq(p, reg1, reg2, 0);
 }
 #endif
 
@@ -400,7 +400,7 @@ static void __init build_pnx8550_bug_fix( u32 **p, struct uasm_label **l, struct
 	uasm_i_tlbwr(p);
 	uasm_i_eret(p);
 	/* BAC Reset */
-	l_pnx8550_bac_reset(l, *p);
+	uasm_l_pnx8550_bac_reset(l, *p);
 	UASM_i_MFC0(p, K0, C0_CONFIGPR);
 	uasm_i_ori(p, K0, K0, (1<<14));
 	UASM_i_MTC0(p, K0, C0_CONFIGPR);

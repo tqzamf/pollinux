@@ -1,0 +1,20 @@
+#
+# Input misc drivers configuration
+#
+menuconfig CHAR_PANDORA2
+	bool "Roku Pandora2 devices"
+	help
+	  Say Y here to choose various drivers for the Roku Pandora2 device.
+
+	  If unsure, say Y.
+
+if CHAR_PANDORA2
+
+config ROKU_PANDORA2_IR
+	tristate "Roku Pandora2 Infra-red driver"
+	depends on MIPS
+	depends on PNX8550
+	help
+	  Say Y here only if you are building for a Roku Pandora2 device.
+endif
+
