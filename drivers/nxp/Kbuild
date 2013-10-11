@@ -1,0 +1,77 @@
+# -*-makefile-*-
+#
+#                             IPSTB Project
+#                   ---------------------------------
+#
+# Copyright (C) 2007 NXP B.V.,
+# All Rights Reserved.
+#
+# Filename: drivers/nxp/Kbuild
+#
+#
+# Rev Date       Author      Comments
+#-------------------------------------------------------------------------------
+#    5 20070125   batelaan    Catch up with MV overlay tree.
+#    6 20070130   neill       Move to NXP prefix
+#    7 20070131   batelaan    Prevent warnings about Kbuild.generated files
+#    8 20070207   barnish     added tmdlAudio & moved tmgdrAudio into core
+#    9 20070209   iwillis     Added tmdlAvsync and tmdlAVDecs
+#9.1.1 20070205   Raiyat      Merge
+#   10 20070213   iwillis     Added tmdlMsvdEx
+#   11 20070214   iwillis     Merge 9.1.2 and 10
+#   12 20070215   batelaan    Remove phStbKSyms driver; not needed anymore.
+#12.1.1 20070312  awest       Add phStbWmdrmPd
+#12.1.2 20070319  batelaan    Factor-out common stuff into new sde/linux/Kbuild.mk file.
+#12.1.3 20070321  steel       align kernel config symbols
+#12.1.4 20070501  awest       add phStbDemuxSW
+#   13 20070209   sjones      added ph833xAfte
+#12.1.4.1.1 20070611  neill   add at24c64 EEPROM driver
+#12.1.4.1.1.1.1 20070615  Awest   add phStbAsf driver
+#   14 20070629   barnish     rename phStbAudio -> phStbAlsa
+#   15 20070713   batelaan    Move included components info into SDE2 makefiles.
+#   16 20070717   batelaan    Use external roster.mk
+#   17 20070719   neill       Add phStbCc
+#   18 20070725   neill       Move CC encoding into phStbVo
+# 16.1.2.1.1 20070801 awest   Remove CONFIG_NXP_ASF
+#   19 20071030 Shane Ogilvie Merged in AFTE
+#   20 20071121   burningh    Remove phStbSbmDev
+
+include $(PRJROOT)/etc/roster.mk
+
+KCONFIG_NAME_phStbVidUseCase := CONFIG_NXP_VIDUSECASE
+KCONFIG_NAME_phStbFB         := CONFIG_NXP_FRAMEBUFFER
+KCONFIG_NAME_phStbCore       := CONFIG_NXP_DRIVERS_CORE
+KCONFIG_NAME_phStbOsal       := CONFIG_NXP_DRIVERS_GPL
+KCONFIG_NAME_phStbDbg        := CONFIG_NXP_DRIVERS_DBG
+KCONFIG_NAME_phStbNetDev     := CONFIG_NXP_DRIVERS_NETDEV
+KCONFIG_NAME_phStbBootDsp    := CONFIG_NXP_DRIVERS_BOOTDSP
+KCONFIG_NAME_phStbIpc        := CONFIG_NXP_DRIVERS_IPC
+KCONFIG_NAME_phKernelIfce    := CONFIG_NXP_DRIVERS_KERNELIFCE
+KCONFIG_NAME_phStbMmio       := CONFIG_NXP_DRIVERS_MMIO
+KCONFIG_NAME_phStbDraw       := CONFIG_NXP_DRIVERS_DRAW
+KCONFIG_NAME_phStbAlsa       := CONFIG_NXP_DRIVERS_ALSA
+KCONFIG_NAME_phStbGpio       := CONFIG_NXP_DRIVERS_GPIO
+KCONFIG_NAME_uda3000         := CONFIG_NXP_UDA3000
+KCONFIG_NAME_ak470x          := CONFIG_NXP_AK470X
+KCONFIG_NAME_at24c64         := CONFIG_NXP_AT24C64
+KCONFIG_NAME_saa1064         := CONFIG_NXP_SAA1064
+KCONFIG_NAME_phStbKey        := CONFIG_NXP_KEYBOARD
+KCONFIG_NAME_phStbLCD        := CONFIG_NXP_LCD
+KCONFIG_NAME_tda9983         := CONFIG_NXP_TDA9983
+KCONFIG_NAME_phStbVo         := CONFIG_NXP_DRIVERS_VO
+KCONFIG_NAME_phStbDemux833x  := CONFIG_NXP_DRIVERS_CORE
+KCONFIG_NAME_phStbDemuxSW    := CONFIG_NSP_DRIVERS_CORE
+KCONFIG_NAME_phStbIR         := CONFIG_NXP_INFRA_RED
+KCONFIG_NAME_phStbRCProtocol := CONFIG_NXP_RC_PROTOCOL
+KCONFIG_NAME_phStbVideoRenderer := CONFIG_NXP_DRIVERS_VIDEORENDERER
+KCONFIG_NAME_phStbKBufMgr    := CONFIG_NXP_DRIVERS_KBUFMGR
+KCONFIG_NAME_tmhwCdmmu       := CONFIG_NXP_DRIVERS_CDMMU
+KCONFIG_NAME_phStbMemBandwidth := CONFIG_NXP_DRIVERS_MEMBANDWIDTH
+KCONFIG_NAME_phStbRSServer   := CONFIG_NXP_RS_SERVER
+KCONFIG_NAME_phStbWmdrmPd    := CONFIG_NXP_WM_DRM_PD
+KCONFIG_NAME_phPnx833xAfte   := CONFIG_NXP_DRIVERS_AFTE
+
+
+THIS_DIR:=$(KSRC)/drivers/nxp
+
+include $(_TMROOT)/sde/linux/Kbuild.mk

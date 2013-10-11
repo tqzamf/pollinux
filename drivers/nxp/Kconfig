@@ -1,0 +1,519 @@
+
+#
+#			   IPSTB Project
+#		   ---------------------------------
+#
+# Copyright (C) 2007 NXP B.V.,
+# All Rights Reserved.
+#
+# Filename: drivers/nxp/Kconfig
+#
+#
+# Rev Date       Author      Comments
+#-------------------------------------------------------------------------------
+#40 20061117     burningh    Make renderer dependent on 8335
+#41 20061122     barnish     Added tmgdrAudio
+#40.1.1 20061123 neill       Add phStbKey and saa1064
+#42 20061124     barnish     Merge
+#43 20061129     burningh    Add phStbKBufMgr
+#44 20061130     neill       Add phStbLCD
+#45 20061204     neill       Add phStbGpio
+#46 20060706     barnish     Remove PHILIPS_DRIVERS_AUDIO_IO
+#46.2.1 20070108 neill       Add phStbVo
+#47 20061211     batelaan    Add PHILIPS_DRIVERS_NETDEV & PHILIPS_DRIVERS_BOOTDSP
+#40.2.1 20061123 grant       Add phStbMemBandwidth
+#40.2.2 20061213 grant       Merge 40.2.1 and 46
+#46.1.1 20061213 A.West      Add phStbRSServer (Remote Services Server)
+#47.1.4 20061215 A.West      Merge
+#48 20061218     batelaan    Merge
+#49 20061218     batelaan    Add dependency on (!PNX8335_AUDIO_MIPS) for most drivers.
+#50 20070108     neill       Merge CES and A Gate versions
+#51 20070116     neill       Split RC into infra-red and protocol
+#52 20070116     batelaan    Add PHILIPS_DRIVERS_IPC
+#53 20070130     neill       Move to NXP_ prefix
+#54 20070312     awest       Add NXP_WM_DRM_PD
+#55 20070312     awest       rework
+#5.1.3 20070321  steel       move pnx8335 symbols to main kernel
+#5.1.4 20070611  neill       add at24c64 EEPROM driver
+#5.1.4.1.1 20070619  Awest       add phStbAsf driver
+#8.1.1 20070719  neill       add phStbCc driver
+#9  20070725     neill       Move CC encoding into phStbVo
+#
+# MV version above copied over to standard kernel build 
+#
+#5  20070206     barnish     tmgdrAudio now in core
+# 8.1.2.1.1 20070801 awest   Remove CONFIG_NXP_ASF
+#6  20070209     sjones      Add NXP_DRIVERS_AFTE
+# 8.1.2.1.1.1.1 20070819 neill  Add CONFIG_NXP_SPLASH_SCREEN
+# 11 20071030 Shane ogilvie  Merge NXP_DRIVERS_AFTE
+# 12 20071121    burningh    Remove phStbSbmDev
+# 13 20080111    laird       Make a few more components disappear for STB225.
+
+menu "NXP Drivers"
+
+################################################################################
+
+config NXP_DRIVERS
+	tristate "Enable NXP Drivers support"
+	default m
+
+config IC_EMULATION
+	bool "Build for IC Emulator"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS)
+	help
+	  Create a build for use on the emulator. This causes the compiler flag TMFL_IC_EMULATION to be set to "true".
+
+################################################################################
+
+choice
+	prompt "Software PLatform"
+	depends on NXP_DRIVERS
+	default SWPLF220
+
+config SWPLF220
+	bool "STB220 Software Platform"
+	help
+	  Build kernel for STB220 Software Platform
+
+config SWPLF225
+	bool "STB225 Software Platform"
+	help
+	  Build kernel for STB225 Software Platform
+
+endchoice
+
+################################################################################
+config NXP_DRIVERS_GPL
+	tristate "NXP OSAL drivers"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS)
+	default m
+	help
+	  NXP drivers which will need to have GPL license.
+	  Included tmosal and tmml.
+	  Usually enabled as a module.
+	  For the emulator it is usually set to 'y'.
+
+
+################################################################################
+
+config NXP_DRIVERS_CORE
+	tristate "NXP Core drivers"
+	depends on NXP_DRIVERS_GPL
+	default m
+	help
+	  Main NXP (non-GPL) drivers for the SoC.
+	  Usually enabled as a module.
+	  For the emulator it is usually set to 'y'.
+	  These drivers should NOT be GPL'ed.
+
+
+################################################################################
+
+config NXP_VIDUSECASE
+	tristate "NXP PNX833x video use cases"
+	depends on NXP_DRIVERS_CORE
+	default m
+	help
+	  Use cases - integrating drivers into a video use case suitable for
+	  emulation testing and demonstration.
+
+################################################################################
+config NXP_DRIVERS_AFTE
+	tristate "NXP PNX833x Afte Main module"
+       depends on NXP_DRIVERS_CORE
+	default y
+	help
+	  Use cases - an AFTE test module used in final system test.
+
+################################################################################
+# Embedded MPEG/H264 data
+
+choice
+	prompt "Include MPEG/H264 ES Test data for MSVD video display"
+	depends on NXP_VIDUSECASE
+	default NXP_VIDUSECASE_VIDEO_DISPLAY_DATA_TABLE_TENNIS
+
+config NXP_VIDUSECASE_VIDEO_DISPLAY_DATA_TABLE_TENNIS
+	bool "Include Table Tennis"
+	help
+	  Suspicious looking Europeans playing table tennis.
+
+config NXP_VIDUSECASE_VIDEO_DISPLAY_DATA_PEARTREE
+	bool "Include Pear tree"
+	help
+	  Some sort of pear tree thing.
+
+config NXP_VIDUSECASE_VIDEO_DISPLAY_DATA_H264_TRANSPORTER_720P
+	bool "Include H264 Transporter 720p"
+	help
+	  H264 data.
+
+config NXP_VIDUSECASE_VIDEO_DISPLAY_DATA_H264_BE_COOL
+	bool "Include H264 Be Cool SD"
+	help
+	  H264 data.
+
+config NXP_VIDUSECASE_VIDEO_DISPLAY_DATA_NONE
+	bool "Include None"
+	help
+	  No MSVD test data.
+endchoice
+
+################################################################################
+
+config NXP_INCLUDEGFXTESTDATA
+	bool "Include Test Image for GFX"
+	depends on NXP_VIDUSECASE
+	help
+	  Include a testcard image for testing purposes.
+
+################################################################################
+
+choice
+	prompt "Include YUV420 Test Image for VSS Block"
+	depends on NXP_VIDUSECASE
+	default NXP_KEIRAYUV420TESTDATA
+
+config NXP_KEIRAYUV420TESTDATA
+	bool "Include Keira"
+	help
+	  Include a test image for testing purposes (Keira Knightley).
+
+config NXP_SPACESHIPYUV420TESTDATA
+	bool "Include SpaceShip"
+	help
+	  Include a test image for testing purposes (SpaceShip Launch).
+
+config NXP_KIDSTOYSYUV420TESTDATA
+	bool "Include Kids Toys"
+	help
+	  Include a test image for testing purposes (Childrens Toys).
+
+config NXP_NOYUV420TESTDATA
+	bool "Include None"
+	help
+	  Include no test data.
+endchoice
+
+################################################################################
+
+config NXP_SPLASH_SCREEN
+	bool "Include NXP Splash Screen"
+	default y
+	help
+	  NXP Splash Screen Implementation.
+	  
+################################################################################
+
+config NXP_FRAMEBUFFER
+	tristate "Include NXP Framebuffer"
+	depends on NXP_DRIVERS_GPL && NXP_DRIVERS_CORE
+	select FB
+	select NXP_DRIVERS_VIDEORENDERER
+	default m
+	help
+	  NXP Framebuffer Implementation.
+
+################################################################################
+
+config NXP_DRIVERS_DRAW
+	tristate "Include NXP 2D Hardware Acceleration"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && SOC_PNX8335
+	default m
+	help
+	  NXP 2D Hardware Acceleration Implementation.
+
+################################################################################
+
+config NXP_DRIVERS_GPIO
+	tristate "Include NXP GPIO"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && SOC_PNX8335
+	default m
+	help
+	  NXP GPIO Implementation.
+
+################################################################################
+
+config NXP_DRIVERS_ALSA
+	tristate "Include NXP ALSA driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && SOC_PNX8335
+	default m
+	help
+	  NXP ALSA Implementation.
+
+################################################################################
+
+config NXP_DRIVERS_BOOTDSP
+	tristate "Boots the DSP CPU with a second Linux kernel"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && SOC_PNX8335
+	default m
+	help
+	  Boots the DSP CPU with a second Linux kernel.
+
+
+################################################################################
+
+config NXP_DRIVERS_IPC
+	tristate "Client/Server IPC API"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && SOC_PNX8335
+	default m
+	help
+	  Client/Server IPC API. 
+	  Normally only used for communication between the control and audio dsp CPUs
+	  of PNX8335. On the audio dsp CPU it normally runs in userspace only.
+
+
+################################################################################
+
+config NXP_DRIVERS_NETDEV
+	tristate "Include NXP network device for IPC"
+	depends on NXP_DRIVERS && (!IC_EMULATION) && SOC_PNX8335 && (NXP_DRIVERS_BOOTDSP || PNX8335_AUDIO_MIPS)
+	default m
+	help
+	  Ethernet over Memory IPC Network device.
+
+
+################################################################################
+
+config NXP_DRIVERS_DBG
+	tristate "Include phStbDbg debug/trace driver"
+	depends on NXP_DRIVERS
+	default m
+	help
+	  phStbDbg driver.
+	  It provides DBG macro control via a tmdbg command and /dev/phdbg device.
+
+
+################################################################################
+
+config NXP_DRIVERS_KERNELIFCE
+	tristate "Include phKernelIfce driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && NXP_DRIVERS_DBG
+	default m
+	help
+	  phKernelIfce driver.
+	  It provides a generic userspace to kernelspace API,
+	   via a /dev/kernelifce device.
+
+
+################################################################################
+
+config NXP_DRIVERS_MMIO
+	tristate "Include /dev/mmio driver"
+	depends on NXP_DRIVERS
+	default m
+	help
+	  phStbMmio driver (MMIO register access via /dev/mmio).
+	  Needed for the exStbMmio program.
+
+
+################################################################################
+
+config NXP_AK470X
+	tristate "Include AK470X AV switch"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && NXP_STB225
+	default m
+	help
+	  Initialisation of AK470X AV (SCART) switch
+
+################################################################################
+
+config NXP_AT24C64
+	tristate "Include AT24C64 EEPROM Driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && NXP_STB225
+	default m
+	help
+	  Initialisation of AT24C64 EEPROM
+
+################################################################################
+
+config NXP_SAA1064
+	tristate "Include SAA1064 LED display driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && NXP_STB225
+	default m
+	help
+	  Initialisation of SAA1064 LED display driver
+
+################################################################################
+
+config NXP_KEYBOARD
+	tristate "Include STB225 front panel keyboard driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && NXP_STB225
+	default m
+	help
+	  Initialisation of STB225 front panel keyboard driver
+################################################################################
+
+config NXP_LCD
+	tristate "Include STB225 front panel LCD driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && NXP_STB225
+	default n
+	help
+	  Initialisation of STB225 front panel LCD driver
+
+################################################################################
+
+config NXP_DRIVERS_VO
+	tristate "Include Analog Video Output driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && NXP_STB225
+	default m
+	select VIDEODENC
+	help
+	  Initialisation of Analog Video Output driver
+
+################################################################################
+
+config NXP_TDA9983
+	tristate "Include TDA9983 HDMI Transmitter"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && NXP_STB225
+	default m
+	select VIDEODENC
+	help
+	  Initialisation of TDA9983 HDMI Transmitter
+
+
+################################################################################
+
+config NXP_UDA3000
+	tristate "Include UDA3000 AV switch"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && NXP_STB220
+	default m
+	help
+	  Initialisation of UDA3000 AV (SCART) switch
+
+
+################################################################################
+
+config NXP_INFRA_RED
+	tristate "Include NXP Infra-red driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && SOC_PNX8335
+	default m
+	help
+	  Initialisation of NXP Infra-red driver
+
+################################################################################
+
+config NXP_RC_PROTOCOL
+	tristate "Include NXP RC5 / RC6 Protocol driver"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && SOC_PNX8335
+	default m
+	select NXP_INFRA_RED
+	help
+	  Initialisation of NXP RC5 / RC6 Protocol driver
+
+################################################################################
+
+config NXP_RS_SERVER
+	tristate "Include NXP Remote Services Server"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && SOC_PNX8335 && NXP_DRIVERS_DBG
+	default m
+	help
+	  Initialisation of NXP Remote Services Server
+
+################################################################################
+
+config NXP_WM_DRM_PD
+	tristate "Include NXP Windows Media PD"
+	depends on NXP_DRIVERS && (!PNX8335_AUDIO_MIPS) && (!IC_EMULATION) && SOC_PNX8335 && NXP_DRIVERS_DBG
+	default m
+	help
+	  Initialisation of NXP Windows Media PD
+
+################################################################################
+
+
+config NXP_DDMSVD2
+	bool
+	depends on NXP_DRIVERS_CORE && SOC_PNX8335
+	default y
+	help
+	  Driver for the MSVD2 device. Requires tmdlMsvd to operate.
+
+
+################################################################################
+
+config NXP_TMMSVD
+	bool
+	depends on NXP_DRIVERS_CORE && !SOC_PNX8335
+	default y
+	help
+	  tmMsvd is a driver for the Multi Standard Video Decoder 
+
+
+################################################################################
+
+config NXP_TMHWCONFIGREV4
+	bool
+	depends on NXP_DRIVERS_CORE && !SOC_PNX8335 && BROKEN
+	default y
+	help
+	  Config block on PNX8331
+
+
+################################################################################
+
+config NXP_TMHWCONFIG8335
+	bool
+	depends on NXP_DRIVERS_CORE && SOC_PNX8335
+	default y
+	help
+	  Config block on PNX8335
+
+
+################################################################################
+
+config NXP_TMHWAVCHIP
+	bool "Include tmhwAvChip"
+	depends on NXP_DRIVERS_CORE && SWPLF220
+	default n
+	help
+	  AV chip support. (Only available on STB220)
+
+
+################################################################################
+
+config NXP_STBSTREAMINGSYSTEM
+	bool "Include Streaming System"
+	depends on NXP_DRIVERS_CORE && !IC_EMULATION && !SWPLF220
+	default y
+	help
+	  SBM Streaming System
+
+
+################################################################################
+
+config NXP_DRIVERS_VIDEORENDERER
+	tristate "Include Video Renderer"
+	depends on NXP_DRIVERS_CORE && !SWPLF220 && SOC_PNX8335
+	default m
+	help
+	  STB Video Renderer
+
+
+################################################################################
+
+config NXP_DRIVERS_MEMBANDWIDTH
+	tristate "Include memory bandwidth profiling"
+	depends on NXP_DRIVERS_CORE && !SWPLF220 && SOC_PNX8335 && BROKEN
+	default n
+	help
+	  Enables measurements of memory bandwidth using the CDMMU hardware block
+
+
+################################################################################
+
+config NXP_DRIVERS_KBUFMGR
+	tristate "Include Kernel Buffer Manager component"
+	depends on NXP_DRIVERS_CORE && !SWPLF220
+	default m
+	help
+	  Allocates large buffers (SBM and frame stores) in kernel space and allows them to be accessed from user space.
+
+
+################################################################################
+
+endmenu
+
+################################################################################
+	
+
