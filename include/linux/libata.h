@@ -49,6 +49,7 @@
 #include <asm-generic/libata-portmap.h>
 #endif
 
+  
 /*
  * compile-time options: to be removed as soon as all the drivers are
  * converted to the new debugging mechanism
