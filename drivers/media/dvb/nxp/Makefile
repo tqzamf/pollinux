@@ -28,7 +28,7 @@
 
 #include $(PRJROOT)/etc/Kbuild.mk
 
-obj-$(CONFIG_DVB_CORE) += phStbDemux_dvb.o phStbDemux_ca.o
+#obj-$(CONFIG_DVB_CORE) += phStbDemux_dvb.o phStbDemux_ca.o
 
 EXTRA_CFLAGS += -Idrivers/media/dvb/dvb-core/ \
                 -Idrivers/media/dvb/frontends

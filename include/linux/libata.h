@@ -58,7 +58,8 @@
 #undef ATA_IRQ_TRAP		/* define to ack screaming irqs */
 #undef ATA_NDEBUG		/* define to disable quick runtime checks */
 
-
+//#define ATA_DEBUG
+//#define ATA_VERBOSE_DEBUG
 /* note: prints function name for you */
 #ifdef ATA_DEBUG
 #define DPRINTK(fmt, args...) printk(KERN_ERR "%s: " fmt, __func__, ## args)

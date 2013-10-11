@@ -24,3 +24,4 @@
 
 obj-y := setup.o prom.o int.o reset.o time.o proc.o platform.o
 obj-$(CONFIG_PCI) += pci.o
+obj-$(CONFIG_I2C_BOARDINFO) += i2c.o
