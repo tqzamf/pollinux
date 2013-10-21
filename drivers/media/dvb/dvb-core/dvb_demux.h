@@ -105,6 +105,12 @@ struct dvb_demux {
 	int feednum;
 	int (*start_feed)(struct dvb_demux_feed *feed);
 	int (*stop_feed)(struct dvb_demux_feed *feed);
+	       int (*set_ts_filter) (struct dvb_demux_feed *feed);
+	int (*del_ts_filter) (struct dvb_demux_feed *feed);
+	int (*set_section_filter) (struct dvb_demux_feed *feed);
+	int (*del_section_filter) (struct dvb_demux_feed *feed);
+	int (*write_to_demux) (struct dvb_demux *demux,
+				 const u8 *buf, size_t len);
 	int (*write_to_decoder)(struct dvb_demux_feed *feed,
 				 const u8 *buf, size_t len);
 	u32 (*check_crc32)(struct dvb_demux_feed *feed,

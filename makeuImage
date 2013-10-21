@@ -10,6 +10,6 @@ $OBJCOPY -O binary --remove-section=.reginfo --remove-section=.mdebug --remove-s
 
 gzip -9 vmlinux.bin
 
-mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | grep kernel_entry | cut -f1 -d ' ') -n MIPS -d vmlinux.bin.gz uImage
+mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | grep kernel_entry | cut -f1 -d ' ') -n MIPS -d vmlinux.bin.gz 00094000_00594000__uImage.bin
 
 # cp uImage /opt/emlix/lp/tftpboot/u-boot

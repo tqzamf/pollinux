@@ -390,6 +390,7 @@ static inline void dvb_dmx_swfilter_packet_type(struct dvb_demux_feed *feed,
 static void dvb_dmx_swfilter_packet(struct dvb_demux *demux, const u8 *buf)
 {
 	struct dvb_demux_feed *feed;
+	struct list_head *pos, *head = &demux->feed_list;
 	u16 pid = ts_pid(buf);
 	int dvr_done = 0;
 
@@ -627,6 +628,17 @@ out:
 
 static void dvb_demux_feed_del(struct dvb_demux_feed *feed)
 {
+	struct dvb_demux *demux = feed->demux;
+
+	if (demux->del_ts_filter)
+	{
+		int ret;
+		if ((ret = demux->del_ts_filter(feed)) < 0)
+		{
+			goto out;
+		}
+	}
+
 	spin_lock_irq(&feed->demux->lock);
 	if (!(dvb_demux_feed_find(feed))) {
 		printk(KERN_ERR "%s: feed not in list (type=%x state=%x pid=%x)\n",
@@ -688,6 +700,17 @@ static int dmx_ts_feed_set(struct dmx_ts_feed *ts_feed, u16 pid, int ts_type,
 #endif
 	}
 
+	
+	if (demux->set_ts_filter)
+	{
+		int ret;
+		if ((ret = demux->set_ts_filter(feed)) < 0)
+		{
+			mutex_unlock(&demux->mutex);
+			return ret;
+		}
+	}
+
 	feed->state = DMX_STATE_READY;
 	mutex_unlock(&demux->mutex);
 
@@ -733,7 +756,8 @@ static int dmx_ts_feed_stop_filtering(struct dmx_ts_feed *ts_feed)
 	struct dvb_demux *demux = feed->demux;
 	int ret;
 
-	mutex_lock(&demux->mutex);
+	if (mutex_lock_interruptible(&demux->mutex))
+		return -ERESTARTSYS;
 
 	if (feed->state < DMX_STATE_GO) {
 		mutex_unlock(&demux->mutex);
@@ -807,7 +831,8 @@ static int dvbdmx_release_ts_feed(struct dmx_demux *dmx,
 	struct dvb_demux *demux = (struct dvb_demux *)dmx;
 	struct dvb_demux_feed *feed = (struct dvb_demux_feed *)ts_feed;
 
-	mutex_lock(&demux->mutex);
+	if (mutex_lock_interruptible(&demux->mutex))
+		return -ERESTARTSYS;
 
 	if (feed->state == DMX_STATE_FREE) {
 		mutex_unlock(&demux->mutex);
@@ -947,6 +972,14 @@ static int dmx_section_feed_start_filtering(struct dmx_section_feed *feed)
 	dvbdmxfeed->feed.sec.secbufp = 0;
 	dvbdmxfeed->feed.sec.seclen = 0;
 
+	if (dvbdmx->set_section_filter)
+	{	
+	   	if ((ret = dvbdmx->set_section_filter(dvbdmxfeed)) < 0) {
+			mutex_unlock(&dvbdmx->mutex);
+			return ret;
+		}
+	}
+
 	if (!dvbdmx->start_feed) {
 		mutex_unlock(&dvbdmx->mutex);
 		return -ENODEV;
@@ -974,7 +1007,8 @@ static int dmx_section_feed_stop_filtering(struct dmx_section_feed *feed)
 	struct dvb_demux *dvbdmx = dvbdmxfeed->demux;
 	int ret;
 
-	mutex_lock(&dvbdmx->mutex);
+	if (mutex_lock_interruptible(&dvbdmx->mutex))
+		return -ERESTARTSYS;
 
 	if (!dvbdmx->stop_feed) {
 		mutex_unlock(&dvbdmx->mutex);
@@ -999,7 +1033,8 @@ static int dmx_section_feed_release_filter(struct dmx_section_feed *feed,
 	struct dvb_demux_feed *dvbdmxfeed = (struct dvb_demux_feed *)feed;
 	struct dvb_demux *dvbdmx = dvbdmxfeed->demux;
 
-	mutex_lock(&dvbdmx->mutex);
+	if (mutex_lock_interruptible(&dvbdmx->mutex))
+		return -ERESTARTSYS;
 
 	if (dvbdmxfilter->feed != dvbdmxfeed) {
 		mutex_unlock(&dvbdmx->mutex);
@@ -1008,6 +1043,16 @@ static int dmx_section_feed_release_filter(struct dmx_section_feed *feed,
 
 	if (feed->is_filtering)
 		feed->stop_filtering(feed);
+	
+	if (dvbdmx->del_section_filter)
+	{
+		int ret;
+		if ((ret = dvbdmx->del_section_filter(dvbdmxfeed)) < 0)
+		{
+			mutex_unlock(&dvbdmx->mutex);
+			return ret;
+		}
+	}
 
 	spin_lock_irq(&dvbdmx->lock);
 	f = dvbdmxfeed->filter;
@@ -1072,7 +1117,8 @@ static int dvbdmx_release_section_feed(struct dmx_demux *demux,
 	struct dvb_demux_feed *dvbdmxfeed = (struct dvb_demux_feed *)feed;
 	struct dvb_demux *dvbdmx = (struct dvb_demux *)demux;
 
-	mutex_lock(&dvbdmx->mutex);
+	if (mutex_lock_interruptible(&dvbdmx->mutex))
+		return -ERESTARTSYS;
 
 	if (dvbdmxfeed->state == DMX_STATE_FREE) {
 		mutex_unlock(&dvbdmx->mutex);
@@ -1188,7 +1234,8 @@ static int dvbdmx_connect_frontend(struct dmx_demux *demux,
 	if (demux->frontend)
 		return -EINVAL;
 
-	mutex_lock(&dvbdemux->mutex);
+	if (mutex_lock_interruptible(&dvbdemux->mutex))
+		return -ERESTARTSYS;
 
 	demux->frontend = frontend;
 	mutex_unlock(&dvbdemux->mutex);
@@ -1199,7 +1246,8 @@ static int dvbdmx_disconnect_frontend(struct dmx_demux *demux)
 {
 	struct dvb_demux *dvbdemux = (struct dvb_demux *)demux;
 
-	mutex_lock(&dvbdemux->mutex);
+	if (mutex_lock_interruptible(&dvbdemux->mutex))
+		return -ERESTARTSYS;
 
 	demux->frontend = NULL;
 	mutex_unlock(&dvbdemux->mutex);

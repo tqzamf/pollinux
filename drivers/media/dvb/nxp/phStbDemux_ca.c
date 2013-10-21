@@ -41,8 +41,6 @@ Rev Date        Author        Comments
 #include <linux/fs.h>
 #include <linux/timer.h>
 #include <linux/poll.h>
-#include <linux/byteorder/swabb.h>
-#include <linux/smp_lock.h>
 #include <linux/dvb/ca.h>
 
 #include "phStbDemux_dvb.h"
@@ -215,7 +213,7 @@ static struct file_operations dvb_ca_fops = {
    .owner   = THIS_MODULE,
    .read    = dvb_ca_read,
    .write   = dvb_ca_write,
-   .ioctl   = dvb_generic_ioctl,
+   .unlocked_ioctl   = dvb_generic_ioctl,
    .open    = dvb_ca_open,
    .release = dvb_generic_release,
    .poll    = dvb_ca_poll,
@@ -238,3 +236,6 @@ void phStbDemux_ca_unregister(struct dvb_device *ca)
 {
    dvb_unregister_device(ca);
 }
+
+EXPORT_SYMBOL(phStbDemux_ca_register);
+EXPORT_SYMBOL(phStbDemux_ca_unregister);

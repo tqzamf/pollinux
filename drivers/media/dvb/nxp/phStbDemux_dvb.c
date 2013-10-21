@@ -58,6 +58,8 @@ Rev Date        Author        Comments
 #include <linux/string.h>
 #include <linux/ctype.h>
 #include <linux/vmalloc.h>
+#include <linux/dvb/frontend.h>
+#include <linux/firmware.h>
 
 // For tuner configuration
 //#include <prjconfig.h>
@@ -66,7 +68,7 @@ Rev Date        Author        Comments
 #include "phStbDemux_ca.h"
 #include "phStbDemux_common.h"
 #include "tda1004x.h"
-#include "tda10021.h"
+#include "tda1002x.h"
 
 #define THIS_MODULE_DESCRIPTION "NXP DVB adapter driver"
 
@@ -113,6 +115,15 @@ typedef enum {
   FE_Model_COUNT
 } FE_Model_t;
 
+typedef enum fe_bandwidth {
+        BANDWIDTH_8_MHZ,
+        BANDWIDTH_7_MHZ,
+        BANDWIDTH_6_MHZ,
+        BANDWIDTH_AUTO,
+        BANDWIDTH_5_MHZ,
+        BANDWIDTH_10_MHZ,
+        BANDWIDTH_1_712_MHZ,
+} fe_bandwidth_t;
 
 typedef struct FE_Model_Desc {
     FE_Model_t     fe_model;
@@ -120,12 +131,13 @@ typedef struct FE_Model_Desc {
     unsigned short * normal_i2c;   // list of poss. I2C addresses
 } FE_Model_Desc_t;
 
+DVB_DEFINE_MOD_OPT_ADAPTER_NR(adapter_nr);
+
 /******************************************************************
 * STATIC FUNCTION PROTOTYPES                  <Module>_<Word>+    *
 *******************************************************************/
 
-static int dvb_phStb_attach_adapter (struct i2c_adapter *adapter);
-static int dvb_phStb_detach_client (struct i2c_client *client);
+static int dvb_phStb_probe (struct i2c_client *i2c, const struct i2c_device_id *id);
 
 static void gate_tuner_bus(struct dvb_frontend* fe, int gate_on);
 
@@ -136,12 +148,16 @@ static void gate_tuner_bus(struct dvb_frontend* fe, int gate_on);
 static int debug;   // module param
 static struct dvb_phStb_card phStb_demux[MAX_SUPPORTED_DEMUX];
 
+#define CONFIG_TDA10023_CU1216
 
 /* Statically select the tuner frontend combination at build time */
 
 #if defined(CONFIG_TDA10046_TU1216)
  static char * fe_model_name = "TU1216";         // module param
  static FE_Model_t gFE_Model = FE_Model_TU1216;  // this module will handle only gFE_Model model.
+#elif defined(CONFIG_TDA10023_CU1216)
+ static char * fe_model_name = "CU1216";         // module param
+ static FE_Model_t gFE_Model = FE_Model_CU1216;  // this module will handle only gFE_Model model.
 #elif defined(CONFIG_TDA10046_TDA8275A)
  static char * fe_model_name = "TDA8275A";         // module param
  static FE_Model_t gFE_Model = FE_Model_TDA8275A;  // this module will handle only gFE_Model model.
@@ -178,22 +194,38 @@ static struct i2c_client *dvb_phStb_i2c_client[MAX_SUPPORTED_DEMUX];
  * concerning the addresses: i2c wants 7 bit (without the r/w bit), so '>>1'
  */
 
-static unsigned short probe[2]           = { I2C_CLIENT_END, I2C_CLIENT_END };
-static unsigned short ignore[2]          = { I2C_CLIENT_END, I2C_CLIENT_END };
 
-static struct i2c_client_address_data dvb_phStb_address_data = {
-        .normal_i2c             = 0, /* dynamically assigned */
-        .probe                  = probe,
-        .ignore                 = ignore,
+const unsigned short *dvb_phStb_address_data;
+
+/*static const FE_Model_Desc_t dvb_phStb_address_data [FE_Model_COUNT] = {
+     { FE_Model_TDA8275A, "TDA8275A" , normal_i2c_TDA8275A},
+     { FE_Model_TU1216,   "TU1216" ,   normal_i2c_TU1216},
+     { FE_Model_CU1216,   "CU1216" ,   normal_i2c_CU1216},
+     { FE_Model_TDHE1,    "TDHE1" ,    normal_i2c_TDHE1}
+};*/
+
+static unsigned short normal_i2c[] = {
+        I2C_TDA10046_TDA8275A_1 >> 1, I2C_TDA10046_TDA8275A_2 >> 1,
+        I2C_TDA10046_TU1216_1 >> 1, I2C_TDA10046_TU1216_2 >> 1,
+        I2C_TDA10021_CU1216_1 >> 1, I2C_TDA10021_CU1216_2 >> 1,
+        I2C_TDA10021_TDHE1_1  >> 1, I2C_CLIENT_END
+};
+static const struct i2c_device_id dvb_ids[] = {
+   { "TDA8275A", 0 },
+   { "TU1216", 0 },
+   { "CU1216", 0 },
+   { "TDHE1", 0 },
+   { }
 };
 
 static struct i2c_driver dvb_phStb_i2c_driver = {
         .driver = {
             .name = "dvb_phStb",
          },
-        .id = I2C_DRIVERID_DVB,
-        .attach_adapter = dvb_phStb_attach_adapter,
-        .detach_client = dvb_phStb_detach_client,
+        /*.id = I2C_DRIVERID_DVB,*/
+        .probe = dvb_phStb_probe,
+        .id_table = dvb_ids,
+        .address_list = normal_i2c,
 };
 
 static int dvb_phStb_write_to_demux(struct dvb_demux *dvbdmx, const u8 *buf, size_t len)
@@ -456,8 +488,9 @@ static int tu1216_pll_init(struct dvb_frontend* fe)
     return 0;
 }
 
-static int tu1216_pll_set(struct dvb_frontend* fe, struct dvb_frontend_parameters* params)
+static int tu1216_pll_set(struct dvb_frontend* fe)
 {
+   struct dtv_frontend_properties *params = &fe->dtv_property_cache;
    struct dvb_phStb_card *this_device = (struct dvb_phStb_card *) fe->dvb->priv;
    u8 tuner_buf[4];
    struct i2c_msg tuner_msg = {.addr = 0x60,.flags = 0,.buf = tuner_buf,.len = sizeof(tuner_buf) };
@@ -542,7 +575,7 @@ static int tu1216_pll_set(struct dvb_frontend* fe, struct dvb_frontend_parameter
    }
 
    // setup PLL filter
-   switch (params->u.ofdm.bandwidth) {
+   switch (params->bandwidth_hz) {
       case BANDWIDTH_6_MHZ:
          filter = 0;
          break;
@@ -665,8 +698,9 @@ exit: // common exit once tuner bus is gated on ...
    return retcode;
 }
 
-static int tda8275a_pll_set(struct dvb_frontend* fe, struct dvb_frontend_parameters* params)
+static int tda8275a_pll_set(struct dvb_frontend* fe)
 {
+   struct dtv_frontend_properties *params = &fe->dtv_property_cache;
    struct dvb_phStb_card *this_device = (struct dvb_phStb_card *) fe->dvb->priv;
    u8 tda8275a_tune_data[] = { 0x00, 0x00, 0x00, 0x16, 0x00, 0x4b, 0x0c, 0x06, 0x24, 0xff, 0x60, 0x00, 0x39, 0x3c, 0x40};
    u8 tda8275a_tune_addr[] = { 0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0x60, 0xa0};
@@ -711,7 +745,7 @@ static int tda8275a_pll_set(struct dvb_frontend* fe, struct dvb_frontend_paramet
    tuner_write_msg.buf   = buffer;
    tuner_write_msg.len   = 2;
 
-   switch (params->u.ofdm.bandwidth)
+   switch (params->bandwidth_hz)
    {
       case BANDWIDTH_6_MHZ:
          tunerFreq = params->frequency + 4000000;
@@ -879,8 +913,9 @@ static u8 read_pwm_tdhe1(struct dvb_phStb_card *card)
    return pwm;
 }
 
-static int philips_cu1216_pll_set(struct dvb_frontend *fe, struct dvb_frontend_parameters *params)
+static int philips_cu1216_pll_set(struct dvb_frontend *fe)
 {
+   struct dtv_frontend_properties *params = &fe->dtv_property_cache;
 	struct dvb_phStb_card *this_device = (struct dvb_phStb_card *) fe->dvb->priv;
 	u8 buf[4];
 	struct i2c_msg msg = {.addr = 0x60,.flags = 0,.buf = buf,.len = sizeof(buf) };
@@ -982,7 +1017,7 @@ static int dvb_phStb_load_card(struct dvb_phStb_card *card, int instance_count, 
 
    dprintk("dvb_phStb: dvb_phStb_load_card\n");
 
-   if ((result = dvb_register_adapter(&card->dvb_adapter, card->card_name, THIS_MODULE, NULL)) < 0)
+   if ((result = dvb_register_adapter(&card->dvb_adapter, card->card_name, THIS_MODULE, NULL, adapter_nr)) < 0)
    {
       dprintk("dvb_phStb: dvb_register_adapter failed (errno = %d)\n", result);
    }
@@ -1078,7 +1113,7 @@ static int dvb_phStb_load_dvr(struct dvb_phStb_card *card, struct phStb_capabili
 
    dprintk("dvb_phStb: dvb_phStb_load_dvr\n");
 
-   if ((result = dvb_register_adapter(&card->dvb_adapter, card->card_name, THIS_MODULE, NULL)) < 0)
+   if ((result = dvb_register_adapter(&card->dvb_adapter, card->card_name, THIS_MODULE, NULL, adapter_nr)) < 0)
    {
        dprintk("dvb_phStb: dvb_register_adapter failed (errno = %d)\n", result);
        return result;		
@@ -1162,7 +1197,7 @@ int dvb_phStb_register(int index, void *hw, struct phStb_demux_device *command, 
    dprintk("dvb_phStb: registering card %d\n", index);
 
    memset(card, 0, sizeof(struct dvb_phStb_card));
-   init_MUTEX(&card->lock);
+   sema_init(&card->lock, 1);
 
    sprintf(card->card_name, "phStb%d", index);
    card->hw = hw;
@@ -1181,7 +1216,7 @@ int dvb_phStb_dvr_register(int index, void *hw, struct phStb_demux_device *comma
    dprintk("dvb_phStb: registering pdma %d\n", index);
 
    memset(card, 0, sizeof(struct dvb_phStb_card));
-   init_MUTEX(&card->lock);
+   sema_init(&card->lock, 1);
 
    sprintf(card->card_name, "phStbDvr%d", index);
    card->hw = hw;
@@ -1242,30 +1277,34 @@ EXPORT_SYMBOL(dvb_phStb_dvr_remove);
 
 /* -------------------------- I2C Detection Functions ------------------------- */
 #if !(defined(CONFIG_IC_EMULATION) || defined(TMFL_IC_EMULATION))
-static int dvb_phStb_detect_client (struct i2c_adapter *adapter, int address, int kind)
+static int dvb_phStb_probe (struct i2c_client *i2c, const struct i2c_device_id *id)
 {
     int rv;
     int tuner_nr = 0;
 
     dprintk("%s: detecting dvb phStb client on address 0x%x (adapter %d)\n",
-            THIS_MODULE_DESCRIPTION, address << 1, adapter->nr);
-    while ((dvb_phStb_address_data.normal_i2c[tuner_nr] != address) &&
+            THIS_MODULE_DESCRIPTION, i2c->addr << 1, i2c->adapter->nr);
+    while ((dvb_phStb_address_data[tuner_nr] != i2c->addr) &&
            (tuner_nr < MAX_SUPPORTED_TUNER))
     {
        tuner_nr++;
     }
+
+    dprintk("Tuner nr: %d\n", tuner_nr);
 
     /* Check for the maximum number of frontends connected and that they */
     /* have been found on the currect buses */
     if ((dvb_phStb_frontend_count == MAX_SUPPORTED_TUNER) ||
         (tuner_nr >= MAX_SUPPORTED_TUNER))
     {
+        dprintk("dvb_phStb_frontend_count\n");
         return 0;
     }
 
     /* Check if the adapter supports the needed features */
-    if (!i2c_check_functionality(adapter, I2C_FUNC_SMBUS_READ_BYTE | I2C_FUNC_SMBUS_WRITE_BYTE_DATA))
+    if (!i2c_check_functionality(i2c->adapter, I2C_FUNC_SMBUS_READ_BYTE | I2C_FUNC_SMBUS_WRITE_BYTE_DATA))
     {
+      dprintk("i2c_check_functionality\n");
         return 0;
     }
 
@@ -1273,51 +1312,25 @@ static int dvb_phStb_detect_client (struct i2c_adapter *adapter, int address, in
     dvb_phStb_i2c_client[tuner_nr] = kmalloc(sizeof(struct i2c_client), GFP_KERNEL);
     if (dvb_phStb_i2c_client[tuner_nr] == 0)
     {
+      dprintk("ENOMEM\n");
         return -ENOMEM;
     }
-    memset(dvb_phStb_i2c_client[tuner_nr], 0, sizeof(struct i2c_client));
-    dvb_phStb_i2c_client[tuner_nr]->addr    = address;
-    dvb_phStb_i2c_client[tuner_nr]->adapter = adapter;
-    dvb_phStb_i2c_client[tuner_nr]->driver  = &dvb_phStb_i2c_driver;
-    snprintf(I2C_NAME(dvb_phStb_i2c_client[tuner_nr]), sizeof(I2C_NAME(dvb_phStb_i2c_client[tuner_nr])) - 1, "dvb_phStb");
 
-    /* Attach the Demux to the I2C adapter */
-    rv = i2c_attach_client(dvb_phStb_i2c_client[tuner_nr]);
-    if (rv) {
-        dprintk("%s: Failed to attach to client on adapter %s (0x%x) - 0x%02X\n",
-                THIS_MODULE_DESCRIPTION,
-                I2C_NAME(adapter), adapter->id, rv);
-        kfree(dvb_phStb_i2c_client[tuner_nr]);
-        return rv;
-    }
+    memset(dvb_phStb_i2c_client[tuner_nr], 0, sizeof(struct i2c_client));
+
+    /* Create the I2C client data structure */
+    dvb_phStb_i2c_client[tuner_nr] = i2c; //XXX: Checkme
+    //i2c_set_clientdata(i2c, pcf8563);
+
     dvb_phStb_frontend_count++;
 
-    dprintk("%s: found device on adapter %s (0x%x) - 0x%02X\n",
+    dprintk("%s: found device on adapter %s (0x%x)\n",
             THIS_MODULE_DESCRIPTION,
-            I2C_NAME(adapter), adapter->id, rv);
+            I2C_NAME(i2c->adapter), 0/*i2c->adapter->id*/);
 
     return 0;
 }
 
-static int dvb_phStb_attach_adapter (struct i2c_adapter *adapter)
-{
-   return i2c_probe(adapter, &dvb_phStb_address_data, &dvb_phStb_detect_client);
-}
-
-static int dvb_phStb_detach_client (struct i2c_client *client)
-{
-   int err;
-
-   err = i2c_detach_client(client);
-   if (err)
-   {
-      return err;
-   }
-
-   kfree(client);
-
-   return 0;
-}
 #endif
 
 static int __init dvb_phStb_init(void)
@@ -1339,7 +1352,7 @@ static int __init dvb_phStb_init(void)
         if (0 == strcmp(fe_model_name, supported_FEs[i].fe_name))
         {
             gFE_Model = supported_FEs[i].fe_model;
-            dvb_phStb_address_data.normal_i2c = supported_FEs[i].normal_i2c;
+            dvb_phStb_address_data = supported_FEs[i].normal_i2c;
             break;
         }
    }
