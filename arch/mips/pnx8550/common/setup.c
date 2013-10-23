@@ -101,16 +101,6 @@ void __init plat_mem_setup(void)
         _machine_halt = pnx8550_machine_halt;
         pm_power_off = pnx8550_machine_halt;
 
-	/* Clear the Global 2 Register, PCI Inta Output Enable Registers
-	   Bit 1:Enable DAC Powerdown
-	  -> 0:DACs are enabled and are working normally
-	     1:DACs are powerdown
-	   Bit 0:Enable of PCI inta output
-	  -> 0 = Disable PCI inta output
-	     1 = Enable PCI inta output
-	*/
-	PNX8550_GLB2_ENAB_INTA_O = 0;
-
     /* Setup CMEM Registers */
     /* CMEM0 = MMIO */
     write_c0_diag4((0x1be00000 & PR4450_CMEMF_BBA) |
@@ -129,6 +119,16 @@ void __init plat_mem_setup(void)
 
     /* CMEM3 = Not used */
     write_c0_diag7(0);
+
+	/* Clear the Global 2 Register, PCI Inta Output Enable Registers
+	   Bit 1:Enable DAC Powerdown
+	  -> 0:DACs are enabled and are working normally
+	     1:DACs are powerdown
+	   Bit 0:Enable of PCI inta output
+	  -> 0 = Disable PCI inta output
+	     1 = Enable PCI inta output
+	*/
+	PNX8550_GLB2_ENAB_INTA_O = 0;
 
 
 	/* IO/MEM resources. */
