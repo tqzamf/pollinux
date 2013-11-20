@@ -57,7 +57,7 @@ struct tda10023_state {
 	u32 sysclk;
 };
 
-#define dprintk(x...)
+#define dprintk(x...)	printk
 
 static int verbose;
 
@@ -113,17 +113,21 @@ static void tda10023_writetab(struct tda10023_state* state, u8* tab)
 {
 	u8 r,m,v;
 	while (1) {
+		printk("tda10023_writetab while\n");
 		r=*tab++;
 		m=*tab++;
 		v=*tab++;
 		if (r==0xff) {
 			if (m==0xff)
 				break;
-			else
+			else {
+				printk("tda10023_writetab while (msleep)\n");
 				msleep(m);
+			}
 		}
 		else
 			tda10023_writebit(state,r,m,v);
+		printk("tda10023_writetab while  end\n");
 	}
 }
 
