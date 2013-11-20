@@ -90,16 +90,16 @@ Rev Date        Author        Comments
 #define I2C_TDA10046_TU1216_2 0x14
 #define TUNER_I2C_ADDRESS_TU1216  0x60
 
-#define I2C_TDA10021_CU1216_1 0x1A
-#define I2C_TDA10021_CU1216_2 0x18
+#define I2C_TDA10023_CU1216_1 0x1A
+#define I2C_TDA10023_CU1216_2 0x18
 
-#define I2C_TDA10021_TDHE1_1  0x18
+#define I2C_TDA10023_TDHE1_1  0x18
 
 #define KHZ   1000
 
 #define dprintk( args... ) \
 	do { \
-		if (debug) printk(KERN_DEBUG args); \
+		if (debug) printk(args); \
 	} while (0)
 
 /******************************************************************
@@ -169,8 +169,8 @@ static struct dvb_phStb_card phStb_demux[MAX_SUPPORTED_DEMUX];
 
 static unsigned short normal_i2c_TDA8275A[] = {I2C_TDA10046_TDA8275A_1 >> 1, I2C_TDA10046_TDA8275A_2 >> 1, I2C_CLIENT_END};
 static unsigned short normal_i2c_TU1216[] = {I2C_TDA10046_TU1216_1 >> 1, I2C_TDA10046_TU1216_2 >> 1, I2C_CLIENT_END};
-static unsigned short normal_i2c_CU1216[] = {I2C_TDA10021_CU1216_1 >> 1, I2C_TDA10021_CU1216_2 >> 1, I2C_CLIENT_END};
-static unsigned short normal_i2c_TDHE1[]  = {I2C_TDA10021_TDHE1_1  >> 1, I2C_CLIENT_END};
+static unsigned short normal_i2c_CU1216[] = {I2C_TDA10023_CU1216_1 >> 1, I2C_TDA10023_CU1216_2 >> 1, I2C_CLIENT_END};
+static unsigned short normal_i2c_TDHE1[]  = {I2C_TDA10023_TDHE1_1  >> 1, I2C_CLIENT_END};
 
 static const FE_Model_Desc_t supported_FEs [FE_Model_COUNT] = {
      { FE_Model_TDA8275A, "TDA8275A" , normal_i2c_TDA8275A},
@@ -181,8 +181,9 @@ static const FE_Model_Desc_t supported_FEs [FE_Model_COUNT] = {
 
 static const u8 tda8275aSlaveAddr[] = {TUNER_I2C_ADDRESS_TDA8275A_2, TUNER_I2C_ADDRESS_TDA8275A_1};
 
-static long gMin_Freq = (174000 * KHZ); // TODO: shouldn't this be 30MHz (lowest VHF) !
-static long gMax_Freq = (862000 * KHZ); // TODO: shouldn't this be 3GHz  (Highest UHF) !
+/*static long gMin_Freq = (174000 * KHZ); // TODO: shouldn't this be 30MHz (lowest VHF) !*/
+/*static long gMax_Freq = (862000 * KHZ); // TODO: shouldn't this be 3GHz  (Highest UHF) !*/
+
 
 /* I2C detection variables */
 static int dvb_phStb_frontend_count = 0;
@@ -207,8 +208,8 @@ const unsigned short *dvb_phStb_address_data;
 static unsigned short normal_i2c[] = {
         I2C_TDA10046_TDA8275A_1 >> 1, I2C_TDA10046_TDA8275A_2 >> 1,
         I2C_TDA10046_TU1216_1 >> 1, I2C_TDA10046_TU1216_2 >> 1,
-        I2C_TDA10021_CU1216_1 >> 1, I2C_TDA10021_CU1216_2 >> 1,
-        I2C_TDA10021_TDHE1_1  >> 1, I2C_CLIENT_END
+        I2C_TDA10023_CU1216_1 >> 1, I2C_TDA10023_CU1216_2 >> 1,
+        I2C_TDA10023_TDHE1_1  >> 1, I2C_CLIENT_END
 };
 static const struct i2c_device_id dvb_ids[] = {
    { "TDA8275A", 0 },
@@ -868,9 +869,10 @@ static struct tda1004x_config tda8275a_config[MAX_SUPPORTED_DEMUX] = {
    }
 };
 
-#if defined(CONFIG_10021)
-static int alps_tdhe1_pll_set(struct dvb_frontend *fe, struct dvb_frontend_parameters *params)
+//#if defined(CONFIG_DVB_TDA10023)
+static int alps_tdhe1_pll_set(struct dvb_frontend *fe)
 {
+  struct dtv_frontend_properties *params = &fe->dtv_property_cache;
 	struct dvb_phStb_card *this_device = (struct dvb_phStb_card *) fe->dvb->priv;
 	u8 buf[4];
 	struct i2c_msg msg = {.addr = 0x61,.flags = 0,.buf = buf,.len = sizeof(buf) };
@@ -896,7 +898,7 @@ static int alps_tdhe1_pll_set(struct dvb_frontend *fe, struct dvb_frontend_param
 	return 0;
 }
 
-static struct tda10021_config alps_tdhe1_config[MAX_SUPPORTED_TUNER];
+static struct tda10023_config alps_tdhe1_config[MAX_SUPPORTED_TUNER];
 
 static u8 read_pwm_tdhe1(struct dvb_phStb_card *card)
 {
@@ -935,7 +937,7 @@ static int philips_cu1216_pll_set(struct dvb_frontend *fe)
 }
 
 
-static struct tda10021_config cu1216_config[MAX_SUPPORTED_TUNER];
+static struct tda10023_config cu1216_config[MAX_SUPPORTED_TUNER];
 
 static u8 read_pwm_cu1216(struct dvb_phStb_card *card)
 {
@@ -952,30 +954,38 @@ static u8 read_pwm_cu1216(struct dvb_phStb_card *card)
    return pwm;
 }
 
-#endif /*CONFIG_10021*/
+//#endif /*CONFIG_DVB_TDA10023*/
 
 
 static void frontend_init(struct dvb_phStb_card *card, int instance_count)
 {
+  printk("!!!!! frontend_init called !!!!\n");
    /* Check to see if a frontend is attached */
+  if((card->i2c_adapter)) {
+    printk("!!!!! (card->i2c_adapter) true !!!!\n");
+  }
+  if((dvb_phStb_i2c_client[instance_count])) {
+    printk("!!!!! (dvb_phStb_i2c_client[instance_count]) true !!!!\n");
+  }
    if ((card->i2c_adapter) && (dvb_phStb_i2c_client[instance_count]))
    {
+    printk("!!!!! Frontend is attached !!!!\n");
       switch (gFE_Model) 
       {
-#if defined(CONFIG_10021)
+//#if defined(CONFIG_DVB_TDA10023)
       case FE_Model_TDHE1:
               /* Set up the I2C address */
               alps_tdhe1_config[instance_count].demod_address = dvb_phStb_i2c_client[instance_count]->addr;
-              card->fe = dvb_attach(tda10021_attach, &alps_tdhe1_config[instance_count], card->i2c_adapter, read_pwm_tdhe1(card));
+              card->fe = dvb_attach(tda10023_attach, &alps_tdhe1_config[instance_count], card->i2c_adapter, read_pwm_tdhe1(card));
               card->fe->ops.tuner_ops.set_params = alps_tdhe1_pll_set;
             break;
         case FE_Model_CU1216:
               /* Set up the I2C address */
               cu1216_config[instance_count].demod_address = dvb_phStb_i2c_client[instance_count]->addr;
-              card->fe = dvb_attach(tda10021_attach, &cu1216_config[instance_count], card->i2c_adapter, read_pwm_cu1216(card));
+              card->fe = dvb_attach(tda10023_attach, &cu1216_config[instance_count], card->i2c_adapter, read_pwm_cu1216(card));
               card->fe->ops.tuner_ops.set_params = philips_cu1216_pll_set;
             break;
-#endif /*CONFIG_10021*/
+//#endif /*CONFIG_DVB_TDA10023*/
         case FE_Model_TU1216:
               /* Set up the I2C address */
               tu1216_config[instance_count].demod_address = dvb_phStb_i2c_client[instance_count]->addr;
@@ -998,8 +1008,8 @@ static void frontend_init(struct dvb_phStb_card *card, int instance_count)
 
       if (card->fe != NULL)
       {
-         card->fe->ops.info.frequency_min = gMin_Freq;
-         card->fe->ops.info.frequency_max = gMax_Freq;
+         /*card->fe->ops.info.frequency_min = gMin_Freq;
+         card->fe->ops.info.frequency_max = gMax_Freq;*/
          if (dvb_register_frontend(&card->dvb_adapter, card->fe))
          {
             dprintk("dvb-phStb: Frontend registration failed!\n");
@@ -1279,17 +1289,20 @@ EXPORT_SYMBOL(dvb_phStb_dvr_remove);
 #if !(defined(CONFIG_IC_EMULATION) || defined(TMFL_IC_EMULATION))
 static int dvb_phStb_probe (struct i2c_client *i2c, const struct i2c_device_id *id)
 {
-    int rv;
     int tuner_nr = 0;
 
     dprintk("%s: detecting dvb phStb client on address 0x%x (adapter %d)\n",
             THIS_MODULE_DESCRIPTION, i2c->addr << 1, i2c->adapter->nr);
+    /* XXX: Both tuners should have the same adress, so it wouldn't work like in "else" */
+#ifdef CONFIG_TDA10023_CU1216
+    tuner_nr = dvb_phStb_frontend_count;
+#else
     while ((dvb_phStb_address_data[tuner_nr] != i2c->addr) &&
            (tuner_nr < MAX_SUPPORTED_TUNER))
     {
        tuner_nr++;
     }
-
+#endif
     dprintk("Tuner nr: %d\n", tuner_nr);
 
     /* Check for the maximum number of frontends connected and that they */
@@ -1389,11 +1402,11 @@ MODULE_LICENSE("GPL");
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, " Turn on (=1) debugging. Default off (=0).");
 
-module_param(gMin_Freq, long, 0444);
+/*module_param(gMin_Freq, long, 0444);
 MODULE_PARM_DESC(gMin_Freq, " FrontEnd's Min. Freq. Default=174000000");
 
 module_param(gMax_Freq, long, 0444);
-MODULE_PARM_DESC(gMax_Freq, " FrontEnd's Max. Freq. Default=862000000");
+MODULE_PARM_DESC(gMax_Freq, " FrontEnd's Max. Freq. Default=862000000");*/
 
 module_param(fe_model_name, charp, S_IRUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(fe_model_name, " FrontEnd/tuner type. Build settings: TU1216, TDA8275A ...");

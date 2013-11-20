@@ -90,11 +90,12 @@ static unsigned int dvb_ca_poll (struct file *file, poll_table *wait)
    return 0;
 }
 
-static int dvb_ca_ioctl(struct inode *inode, struct file *file, unsigned int cmd, void *parg)
+static int dvb_ca_ioctl(struct file *file, unsigned int cmd, void *parg)
 {
    struct dvb_device     *dvbdev  = (struct dvb_device *) file->private_data;
    struct dvb_phStb_card *card    = (struct dvb_phStb_card *) dvbdev->priv;
 
+   printk("DVB_CA: Got cmd %d", cmd);
    switch (cmd)
    {
       case CA_RESET:
