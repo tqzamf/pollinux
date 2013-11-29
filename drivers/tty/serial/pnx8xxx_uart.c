@@ -33,6 +33,7 @@
 
 #include <asm/io.h>
 #include <asm/irq.h>
+#include <asm/mach-pnx8550/uart.h>
 
 /* We'll be using StrongARM sa1100 serial port major/minor */
 #define SERIAL_PNX8XXX_MAJOR	204
@@ -614,6 +615,82 @@ pnx8xxx_verify_port(struct uart_port *port, struct serial_struct *ser)
 	return ret;
 }
 
+#ifdef CONFIG_CONSOLE_POLL
+static int pnx8xxx_get_poll_char(struct uart_port *port)
+{
+	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	char ch;
+
+	/* printk("pnx8xxx_get_poll_char\n"); */
+
+	if(!((serial_in(sport, PNX8XXX_FIFO) &
+					PNX8XXX_UART_FIFO_RXFIFO) >> 8))
+		return NO_POLL_CHAR;
+
+	/* Read one char */
+	ch = serial_in(sport, PNX8XXX_FIFO) &
+		PNX8XXX_UART_FIFO_RBRTHR;
+
+	/* Advance the RX FIFO read pointer */
+	serial_out(sport, PNX8XXX_LCR, serial_in(sport, PNX8XXX_LCR) |
+		PNX8XXX_UART_LCR_RX_NEXT);
+	
+	/* printk("pnx8xxx_get_poll_char out %s\n", &ch); */
+
+	return (ch);
+}
+
+static void pnx8xxx_put_poll_char(struct uart_port *port, unsigned char ch)
+{
+	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	int status;
+
+	/* printk("pnx8xxx_put_poll_char %s\n", &ch); */
+
+	do {
+		/* Wait for UART_TX register to empty */
+		status = serial_in(sport, PNX8XXX_FIFO);
+	} while (status & PNX8XXX_UART_FIFO_TXFIFO);
+	serial_out(sport, PNX8XXX_FIFO, ch);
+
+	/* printk("pnx8xxx_put_poll_char\n"); */
+}
+
+static void pnx8xxx_hwinit(struct uart_port *port)
+{
+	struct pnx8xxx_port *sport = (struct pnx8xxx_port *)port;
+	int lcr;
+
+	lcr = serial_in(sport, PNX8XXX_LCR);
+	lcr |= PNX8XXX_UART_LCR_TX_RST;
+	lcr |= PNX8XXX_UART_LCR_RX_RST;
+	serial_out(sport, PNX8XXX_LCR, lcr);
+
+	serial_out(sport, PNX8XXX_ICLR, PNX8XXX_UART_INT_ALLRX |
+			     PNX8XXX_UART_INT_ALLTX);
+	/*
+	 * Clear all interrupts
+	 */
+	/* Clear all the transmitter FIFO counters (pointer and status) */
+	//(ip3106_lcr(UART_BASE, port)) |= PNX8XXX_UART_LCR_TX_RST;
+	/* Clear all the receiver FIFO counters (pointer and status) */
+	//ip3106_lcr(UART_BASE, port) |= PNX8XXX_UART_LCR_RX_RST;
+	/* Clear all interrupts */
+	//ip3106_iclr(UART_BASE, (port)) = PNX8XXX_UART_INT_ALLRX |
+	//	PNX8XXX_UART_INT_ALLTX;
+
+	/*
+	 * Now, initialize the UART
+	 */
+	lcr = PNX8XXX_UART_LCR_8BIT;
+	serial_out(sport, PNX8XXX_LCR, lcr);
+	//ip3106_lcr(UART_BASE, port) = PNX8XXX_UART_LCR_8BIT;
+	//
+	//ip3106_baud(UART_BASE, port) = 5; // 38400 Baud
+	serial_out(sport, PNX8XXX_BAUD, 5);
+}
+#endif /* CONFIG_CONSOLE_POLL */
+
 static struct uart_ops pnx8xxx_pops = {
 	.tx_empty	= pnx8xxx_tx_empty,
 	.set_mctrl	= pnx8xxx_set_mctrl,
@@ -631,6 +708,11 @@ static struct uart_ops pnx8xxx_pops = {
 	.request_port	= pnx8xxx_request_port,
 	.config_port	= pnx8xxx_config_port,
 	.verify_port	= pnx8xxx_verify_port,
+#ifdef CONFIG_CONSOLE_POLL
+  //.poll_init = pnx8xxx_hwinit,
+  .poll_get_char = pnx8xxx_get_poll_char,
+  .poll_put_char = pnx8xxx_put_poll_char,
+#endif
 };
 
 
