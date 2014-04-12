@@ -25,6 +25,7 @@
 #include <asm/processor.h>
 #include <asm/reboot.h>
 #include <glb.h>
+#include <standbyctl.h>
 
 void pnx8550_machine_restart(char *command)
 {
@@ -33,6 +34,18 @@ void pnx8550_machine_restart(char *command)
 
 void pnx8550_machine_halt(void)
 {
+	/* GPIO12 controls reset behavior in a complex way. After boot, it is 1,
+	 * meaning that a CPU reset causes a reboot. If it is ever set to 0, the
+	 * machine will instead power off on reset. Setting GPIO12 back to 1
+	 * makes it power off IMMEDIATELY after ~1sec.
+	 * Thus, the method for powering off is simple: set GPIO12 to open-drain
+	 * output (in case something misconfigured it), pull it low, and then
+	 * reset the CPU. */
+	PNX8550_STANDBYCTL_MODE = (PNX8550_STANDBYCTL_MODE & PNX8550_STANDBYCTL_MODE_MASK) | PNX8550_STANDBYCTL_MODE_CONFIG;
+	PNX8550_STANDBYCTL_DATA = PNX8550_STANDBYCTL_ENABLE_POWEROFF;
+	pnx8550_machine_restart(NULL);
+
+	// if that went wrong, busy-loop until the end of time
 	while (1) {
 		if (cpu_wait)
 			cpu_wait();

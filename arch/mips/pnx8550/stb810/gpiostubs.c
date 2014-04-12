@@ -1,5 +1,5 @@
 /*
- * GPIO <-> IRQ mapping stub for PNX8550.
+ * GPIO <-> IRQ mapping stubs for PNX8550.
  * 
  * Public domain.
  * 
@@ -16,7 +16,8 @@ int gpio_to_irq(unsigned gpio) {
 
 // GPIOLIB doesn't provide this so let's hope it isn't needed.
 int irq_to_gpio(unsigned irq) {
-	return -1;
+	// "unsupported"
+	return -ENOSYS;
 }
 
 EXPORT_SYMBOL(gpio_to_irq);
