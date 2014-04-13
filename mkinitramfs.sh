@@ -13,9 +13,9 @@ file init init 755 0 0
 dir bin 755 0 0
 dir sbin 755 0 0
 file sbin/telinit telinit 755 0 0
-file bin/busybox busybox/bin/busybox 755 0 0
+file bin/busybox busybox.bin/bin/busybox 755 0 0
 dir lib 755 0 0
 dir lib/modules 755 0 0
 EOF
-find busybox -type l | sed -e 's_^busybox/_slink _' -e 's_$_ /bin/busybox 777 0 0_' >>files.tmp
+find busybox.bin -type l | sed -e 's_^busybox.bin/_slink _' -e 's_$_ /bin/busybox 777 0 0_' >>files.tmp
 ../linux-3.1-PNX8550/usr/gen_init_cpio files.tmp >initramfs.cpio
