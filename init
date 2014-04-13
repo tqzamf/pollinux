@@ -1,0 +1,46 @@
+#!/bin/sh
+# mount and populate pseudo-filesystems /sys, /proc, /dev and /dev/pts.
+mount -t sysfs -o nodev,noexec,nosuid sysfs /sys
+mount -t proc -o nodev,noexec,nosuid proc /proc
+mount -t devtmpfs dev /dev
+# make modprobe etc. happy
+mkdir -p /lib/modules/$(cut -d' ' -f3 </proc/version)
+
+# wait for root device, if given on command line.
+eval $(awk -v RS=' ' -v FS== '/^root=/{print}' /proc/cmdline)
+rootdev=$root
+if [ -n "$root" ]; then
+	echo -n "Waiting for $root ... "
+	for countdown in 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
+		if echo $root | fgrep -q =; then
+			rootdev=$(findfs $root)
+		fi
+		[ -e "$rootdev" ] && break
+		echo -n "$countdown "
+		sleep 1
+	done
+	
+	# try one last time
+	if echo $root | fgrep -q =; then
+		rootdev=$(findfs $root)
+	fi
+	if [ -e "$rootdev" ]; then
+		echo "done"
+		mount "$rootdev" /root
+	else
+		echo "failed"
+	fi
+fi
+
+# check if init is usable. if not, drop to rescue shell to let the user
+# try and fix it.
+while ! [ -x "/root/sbin/init" ]; do
+	echo "/sbin/init not found on /root. starting rescue shell."
+	setsid cttyhack ash
+done
+# init appears to be usable. try switching to it. if this fails, that's
+# a kernel panic.
+mount -o bind /dev /root/dev
+mount -o bind /proc /root/proc
+mount -o bind /sys /root/sys
+exec switch_root /root /sbin/init "$@"

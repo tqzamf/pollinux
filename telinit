@@ -1,0 +1,9 @@
+#!/bin/sh
+sync
+if [ "$1" == 0 ]; then
+	umount -alf
+	exec halt -f
+elif [ "$1" == 6 ]; then
+	umount -alf
+	exec reboot -f
+fi
