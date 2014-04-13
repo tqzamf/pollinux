@@ -25,6 +25,7 @@ int prom_argc;
 char **prom_argv, **prom_envp;
 extern void  __init prom_init_cmdline(void);
 extern char *prom_getenv(char *envname);
+extern int __init pnx8550_gpio_init(void);
 
 const char *get_system_type(void)
 {
@@ -43,4 +44,7 @@ void __init prom_init(void)
 
 	memsize = 0x08000000; /* Trimedia uses memory above */
 	add_memory_region(0, memsize, BOOT_MEM_RAM);
+	
+	// register GPIOs
+	pnx8550_gpio_init();
 }

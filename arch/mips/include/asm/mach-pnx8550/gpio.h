@@ -1,64 +1,43 @@
-#ifndef PNX8550_GPIO_H
-#define PNX8550_GPIO_H
+/*
+ *  STB810 GPIO pin definitions
+ *
+ *  Public domain.
+ *
+ */
 
-#include <asm/mach-pnx8550/glb.h>
+#include <asm-generic/gpio.h>
 
-/* Mode Control register addresses */
-#define MMIO_MC(pin) (0x104000 + (((pin) >> 4) << 2))
+#ifndef __PNX8550_GPIO_H
+#define __PNX8550_GPIO_H
 
-/* Obtain the current mode for the specified pin from the provided MC register */
-#define PIN_MODE_READ(reg, pin) ( ((reg) >> (((pin) % 16) * 2)) & 0x3 )
+// redirect though GPIOLIB
+#define gpio_to_irq __gpio_to_irq
+#define gpio_set_value __gpio_set_value
+#define gpio_get_value __gpio_get_value
+#define gpio_cansleep __gpio_cansleep
 
-/* Set the mode for the specified pin */
-#define PIN_MODE_WRITE(pin, mode) ( ((mode) & 0x3) << (((pin) % 16) * 2) )
 
-/* IO Data register addresses */
-#define MMIO_IOD(pin) (0x104010 + (((pin) >> 4) << 2))
+#define PNX8550_GPIO_BASE(i) (0xBBF04000 | ((i) >> 4) << 2)
+//#define PNX8550_GPIO_MODE_OFFSET  0x00
+#define PNX8550_GPIO_DATA_OFFSET  0x10
+#define PNX8550_GPIO_COUNT 64
 
-/* Read the current data on the specified pin from the provided IOD register */
-#define PIN_DATA_READ(reg, pin) ( ((reg) >> ((pin) % 16)) & 1 )
+//#define PNX8550_GPIO_MODE(i) *(volatile unsigned long *)(PNX8550_GPIO_BASE(i) + PNX8550_GPIO_MODE_OFFSET)
+#define PNX8550_GPIO_DATA(i) *(volatile unsigned long *)(PNX8550_GPIO_BASE(i) + PNX8550_GPIO_DATA_OFFSET)
 
-/* Read the current data on multiple pins from the provided IOD
- * register. You'll get strange results if all the pins aren't in the
- * same IOD register. */
-#define PIN_MULTI_READ(reg, first_pin, count) (((reg) >> ((first_pin) % 16)) & ((1<<(count))-1))
+#define PNX8550_GPIO_SET_IN(pin)    (0x00001 << ((pin) & 15))
+#define PNX8550_GPIO_SET_LOW(pin)   (0x10000 << ((pin) & 15))
+#define PNX8550_GPIO_SET_HIGH(pin)  (0x10001 << ((pin) & 15))
+#define PNX8550_GPIO_DATA_MASK(pin) (0x00001 << ((pin) & 15))
+#define PNX8550_GPIO_DIR_MASK(pin)  (0x10000 << ((pin) & 15))
 
-/* Write out the provided data on the specified pin */
-#define PIN_DATA_WRITE(pin, val) ( (1 << (16 + ((pin) % 16))) + ((val) << ((pin) % 16)) )
+#define PNX8550_GPIO_STANDBY 12
+#define PNX8550_GPIO_CPULED 44
 
-/* Generate the value necessary to write out the provided data on
- * multiple pins to the IOD register. You'll get strange results if
- * all the pins aren't in the same IOD register. */
-#define PIN_MULTI_WRITE(first_pin, count, val) ((((1<<(count))-1) << (16 + (((first_pin) % 16)))) | ((val) << ((first_pin) % 16)))
+//this is the default configuration after boot, but why restore it?
+//#define PNX8550_GPIO_MODE_PORT0 0xffffffff
+//#define PNX8550_GPIO_MODE_PORT1 0xfffffff5
+//#define PNX8550_GPIO_MODE_PORT2 0xffffffff
+//#define PNX8550_GPIO_MODE_PORT3 0xfefeffff
 
-/* Generate the value necessary to set the given pin to tristate. */
-#define PIN_TRISTATE(pin) (1 << ((pin) % 16))
-
-/* Generate the value necessary to set the given pins to
- * tristate. You'll get strange results if all the pins aren't in the
- * same IOD register. */
-#define PIN_MULTI_TRISTATE(first_pin, count) (((1<<(count))-1) << ((first_pin) % 16))
-
-#define PIN_MODE_PRIMARY 1
-#define PIN_MODE_GPIO 2
-#define PIN_MODE_GPIO_DRAIN 3
-
-#define TSU_MODE_DISABLED 0
-#define TSU_MODE_FALLING 1
-#define TSU_MODE_RISING 2
-#define TSU_MODE_BOTH 3
-
-#define TSU_CTL(chan) (0x104400 + ((chan) << 4))
-#define TSU_DATA(chan) (0x104404 + ((chan) << 4))
-
-#define INT_STATUS(index) (0x104f30 + ((index) << 4))
-#define INT_ENABLE(index) (0x104f34 + ((index) << 4))
-#define INT_CLEAR(index) (0x104f38 + ((index) << 4))
-#define INT_SET(index) (0x104f3c + ((index) << 4))
-
-#define TSU_INT_STATUS(chan) INT_STATUS(((chan) < 8) ? 7 : 9)
-#define TSU_INT_ENABLE(chan) INT_ENABLE(((chan) < 8) ? 7 : 9)
-#define TSU_INT_CLEAR(chan) INT_CLEAR(((chan) < 8) ? 7 : 9)
-#define TSU_INT_SET(chan) INT_SET(((chan) < 8) ? 7 : 9)
-
-#endif // PNX8550_GPIO_H
+#endif
