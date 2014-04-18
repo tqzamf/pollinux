@@ -44,6 +44,7 @@
 extern void __init board_setup(void);
 extern void pnx8550_machine_restart(char *);
 extern void pnx8550_machine_halt(void);
+extern void pnx8550_machine_power_off(void);
 extern struct resource ioport_resource;
 extern struct resource iomem_resource;
 extern char *prom_getcmdline(void);
@@ -99,7 +100,7 @@ void __init plat_mem_setup(void)
 
         _machine_restart = pnx8550_machine_restart;
         _machine_halt = pnx8550_machine_halt;
-        pm_power_off = pnx8550_machine_halt;
+        pm_power_off = pnx8550_machine_power_off;
 
     /* Setup CMEM Registers */
     /* CMEM0 = MMIO */

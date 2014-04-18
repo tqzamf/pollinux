@@ -34,6 +34,16 @@ void pnx8550_machine_restart(char *command)
 
 void pnx8550_machine_halt(void)
 {
+	// busy-halt. we do not power the machine off here because halt isn't
+	// supposed to do that
+	while (1) {
+		if (cpu_wait)
+			cpu_wait();
+	}
+}
+
+void pnx8550_machine_power_off(void)
+{
 	/* GPIO12 controls reset behavior in a complex way. After boot, it is 1,
 	 * meaning that a CPU reset causes a reboot. If it is ever set to 0, the
 	 * machine will instead power off on reset. Setting GPIO12 back to 1
