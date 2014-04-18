@@ -19,4 +19,4 @@ dir lib 755 0 0
 dir lib/modules 755 0 0
 EOF
 find busybox.bin -type l | sed -e 's_^busybox.bin/_slink _' -e 's_$_ /bin/busybox 777 0 0_' >>files.tmp
-../linux-3.1-PNX8550/usr/gen_init_cpio files.tmp >initramfs.cpio
+../usr/gen_init_cpio files.tmp >initramfs.cpio
