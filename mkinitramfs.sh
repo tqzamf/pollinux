@@ -1,4 +1,5 @@
 #!/bin/bash
+make -C busybox install
 cat >files.tmp <<EOF
 dir proc 755 0 0
 dir sys 755 0 0
