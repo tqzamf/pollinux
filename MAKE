@@ -4,6 +4,7 @@ export NM=${CROSS_COMPILE}nm
 export OBJCOPY=${CROSS_COMPILE}objcopy
 
 # build the kernel
+make ARCH=mips usr
 (cd initramfs && bash mkinitramfs.sh)
 make ARCH=mips
 $OBJCOPY -O binary --remove-section=.reginfo --remove-section=.mdebug --remove-section=.comment --remove-section=.note --remove-section=.pdr --remove-section=.options --remove-section=.MIPS.options vmlinux vmlinux.bin
