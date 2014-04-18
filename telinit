@@ -2,7 +2,7 @@
 sync
 if [ "$1" == 0 ]; then
 	umount -alf
-	exec halt -f
+	exec poweroff -f
 elif [ "$1" == 6 ]; then
 	umount -alf
 	exec reboot -f
