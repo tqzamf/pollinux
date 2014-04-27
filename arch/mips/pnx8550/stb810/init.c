@@ -140,9 +140,6 @@ void __init prom_init(void)
         printk("!!!!!!!!!\n");
     }
 #endif
-	
-	// register GPIOs
-	pnx8550_gpio_init();
 }
 
 EXPORT_SYMBOL(phStbMmio_Base);

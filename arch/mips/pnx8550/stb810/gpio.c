@@ -7,9 +7,11 @@
  * Copyright (C) 2008 Florian Fainelli <florian@openwrt.org>
  */
 
+#include <linux/platform_device.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/gpio.h>
+#include <linux/leds.h>
 
 #include <gpio.h>
 
@@ -105,6 +107,24 @@ static struct gpio_chip pnx8550_gpio_chip = {
 	.names            = pnx8550_gpio_names,
 };
 
+static struct gpio_led heartbeat_led = {
+	.name		= "heartbeat",
+	.active_low	= 1,
+	.default_trigger	= "heartbeat",
+	.gpio		= PNX8550_GPIO_CPULED,
+};
+
+static struct gpio_led_platform_data heartbeat_led_data = {
+	.num_leds	= 1,
+	.leds		= &heartbeat_led,
+};
+
+static struct platform_device heartbeat_led_device = {
+	.name		= "leds-gpio",
+	.id			= -1,
+	.dev.platform_data	= &heartbeat_led_data,
+};
+
 int __init pnx8550_gpio_init(void)
 {
 	int res, pin;
@@ -118,12 +138,10 @@ int __init pnx8550_gpio_init(void)
 	
 	res = gpiochip_add(&pnx8550_gpio_chip);
 	if (res == 0) {
-		// set the CPU LED GPIO low, thus enabling the LED. that way it lights up
-		// as soon as Linux is running. go through GPIOLIB so that it remembers the
-		// pin direction.
-		gpio_request(pnx8550_gpio_chip.base + PNX8550_GPIO_CPULED, "cpu led boot indicator");
-		gpio_direction_output(pnx8550_gpio_chip.base + PNX8550_GPIO_CPULED, 0);
-		gpio_free(pnx8550_gpio_chip.base + PNX8550_GPIO_CPULED);
+		// try to register CPU heartbeat
+		heartbeat_led.gpio += pnx8550_gpio_chip.base;
+		platform_device_register(&heartbeat_led_device);
 	}
 	return res;
 }
+subsys_initcall(pnx8550_gpio_init);

@@ -44,7 +44,4 @@ void __init prom_init(void)
 
 	memsize = 0x08000000; /* Trimedia uses memory above */
 	add_memory_region(0, memsize, BOOT_MEM_RAM);
-	
-	// register GPIOs
-	pnx8550_gpio_init();
 }
