@@ -1,0 +1,9 @@
+#!/bin/sh
+sync
+if [ "$1" == 0 ]; then
+	umount -far
+	exec poweroff -f
+elif [ "$1" == 6 ]; then
+	umount -far
+	exec reboot -f
+fi

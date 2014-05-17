@@ -1,15 +1,17 @@
 #!/bin/sh
+set -e
 CROSS_COMPILE=mipsel-linux-gnu-
 export NM=${CROSS_COMPILE}nm
 export OBJCOPY=${CROSS_COMPILE}objcopy
 
+# build the kernel
+touch initramfs/initramfs.cpio
+make ARCH=mips usr
+(cd initramfs && bash mkinitramfs.sh)
 make ARCH=mips -j10
-
 $OBJCOPY -O binary --remove-section=.reginfo --remove-section=.mdebug --remove-section=.comment --remove-section=.note --remove-section=.pdr --remove-section=.options --remove-section=.MIPS.options vmlinux vmlinux.bin
 
+# create U-Boot image
 rm -f vmlinux.bin.gz 
 gzip -9 vmlinux.bin
-
-mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | awk '$3=="kernel_entry"{print $1}') -n MIPS -d vmlinux.bin.gz uImage
-
-# cp uImage /opt/emlix/lp/tftpboot/u-boot
+mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | awk '$3=="kernel_entry"{print $1}') -n 'Pollinux PNX8950' -d vmlinux.bin.gz uImage
