@@ -1,15 +1,15 @@
 #!/bin/sh
+CROSS_COMPILE=mipsel-linux-gnu-
 export NM=${CROSS_COMPILE}nm
 export OBJCOPY=${CROSS_COMPILE}objcopy
-
-rm -f vmlinux.bin.gz 
 
 make ARCH=mips -j10
 
 $OBJCOPY -O binary --remove-section=.reginfo --remove-section=.mdebug --remove-section=.comment --remove-section=.note --remove-section=.pdr --remove-section=.options --remove-section=.MIPS.options vmlinux vmlinux.bin
 
+rm -f vmlinux.bin.gz 
 gzip -9 vmlinux.bin
 
-mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | grep kernel_entry | cut -f1 -d ' ') -n MIPS -d vmlinux.bin.gz 00094000_00594000__uImage.bin
+mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | awk '$3=="kernel_entry"{print $1}') -n MIPS -d vmlinux.bin.gz uImage
 
 # cp uImage /opt/emlix/lp/tftpboot/u-boot

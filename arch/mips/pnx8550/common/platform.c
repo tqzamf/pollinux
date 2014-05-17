@@ -25,20 +25,6 @@
 #include <usb.h>
 #include <uart.h>
 
-static struct resource pnx8550_usb_ohci_resources[] = {
-	[0] = {
-		.start		= PNX8550_USB_OHCI_OP_BASE,
-		.end		= PNX8550_USB_OHCI_OP_BASE +
-				  PNX8550_USB_OHCI_OP_LEN,
-		.flags		= IORESOURCE_MEM,
-	},
-	[1] = {
-		.start		= PNX8550_INT_USB,
-		.end		= PNX8550_INT_USB,
-		.flags		= IORESOURCE_IRQ,
-	},
-};
-
 static struct resource pnx8550_uart_resources[] = {
 	[0] = {
 		.start		= PNX8550_UART_PORT0,
@@ -91,21 +77,7 @@ struct pnx8xxx_port pnx8xxx_ports[] = {
 	},
 };
 
-/* The dmamask must be set for OHCI to work */
-static u64 ohci_dmamask = DMA_BIT_MASK(32);
-
 static u64 uart_dmamask = DMA_BIT_MASK(32);
-
-static struct platform_device pnx8550_usb_ohci_device = {
-	.name		= "pnx8550-ohci",
-	.id		= -1,
-	.dev = {
-		.dma_mask		= &ohci_dmamask,
-		.coherent_dma_mask	= DMA_BIT_MASK(32),
-	},
-	.num_resources	= ARRAY_SIZE(pnx8550_usb_ohci_resources),
-	.resource	= pnx8550_usb_ohci_resources,
-};
 
 static struct platform_device pnx8550_uart_device = {
 	.name		= "pnx8xxx-uart",
@@ -120,7 +92,6 @@ static struct platform_device pnx8550_uart_device = {
 };
 
 static struct platform_device *pnx8550_platform_devices[] __initdata = {
-	&pnx8550_usb_ohci_device,
 	&pnx8550_uart_device,
 };
 
