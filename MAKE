@@ -14,4 +14,4 @@ $OBJCOPY -O binary --remove-section=.reginfo --remove-section=.mdebug --remove-s
 # create U-Boot image
 rm -f vmlinux.bin.gz 
 gzip -9 vmlinux.bin
-mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | awk '$3=="kernel_entry"{print $1}') -n 'Pollinux PNX8950' -d vmlinux.bin.gz uImage
+mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | awk '$3=="kernel_entry"{print $1}') -n 'Pollinux PNX8950 TriMemory' -d vmlinux.bin.gz uImage
