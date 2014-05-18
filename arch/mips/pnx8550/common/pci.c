@@ -76,8 +76,10 @@ static int __init pnx8550_pci_setup(void)
 	PNX8550_GLB2_ENAB_INTA_O = 0;
 
 	/* Calc the PCI mem size code */
-	if (mem_size >= 128)
-		pci_mem_code = SIZE_128M;
+	if (mem_size >= 256)
+		pci_mem_code = SIZE_256M;
+	else if (mem_size >= 128)
+			pci_mem_code = SIZE_128M;
 	else if (mem_size >= 64)
 		pci_mem_code = SIZE_64M;
 	else if (mem_size >= 32)
