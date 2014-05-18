@@ -55,6 +55,7 @@ void __init prom_init(void)
 {
     unsigned int mem_size;
     unsigned long mem_region_size;
+    unsigned int fb_base;
     char* argptr;
     int pal = 1;
 #if HAVE_SD_DISPLAY
@@ -94,7 +95,9 @@ void __init prom_init(void)
 #else
     mem_region_size = STB810_MIPS_MEM_SIZE;
 #endif
-    add_memory_region(0x0, mem_region_size, BOOT_MEM_RAM);
+    fb_base = mem_region_size - PNX8550_FRAMEBUFFER_SIZE;
+    add_memory_region(0, fb_base, BOOT_MEM_RAM);
+    add_memory_region(fb_base, PNX8550_FRAMEBUFFER_SIZE, BOOT_MEM_RESERVED);
 
 #if HAVE_SD_DISPLAY
     argptr = prom_getcmdline();
@@ -134,7 +137,7 @@ void __init prom_init(void)
     printk("PNX8550: Setup DIsplay: %d (Pal: %d, BG: %d)", setup_display, pal, background);
     if(setup_display)
     {
-        pnx8550_setupDisplay(pal, (mem_size >= 256), background);
+        pnx8550_setupDisplay(pal, fb_base, background);
         printk("Setting initial splash screen display mode %s\n", pal ? "SD (50Hz)" : "SD (60Hz)");
         printk("!!!!!!!!!\n");
     }

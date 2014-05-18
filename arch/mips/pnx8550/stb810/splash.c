@@ -22,18 +22,16 @@
 #include <glb.h>
 #include <pci.h>
 #include <int.h>
+#include <framebuffer.h>
 
 /* Include the GIF format data to be displayed as the splash screen */
 #include "image.c"
 
 /* Macros defining the frame buffer display attributes */
-#define PAL_FRAME_BUFFER_HEIGHT     576
-#define NTSC_FRAME_BUFFER_HEIGHT    480
-#define FRAME_BUFFER_WIDTH          720
-#define STRIDE                      1440
-
-#define FRAME_BUFFER_LOCATION          0x7800000
-#define FRAME_BUFFER_LOCATION_HIGH_MEM 0xf700000
+#define PAL_FRAME_BUFFER_HEIGHT     PNX8550_FRAMEBUFFER_HEIGHT_PAL
+#define NTSC_FRAME_BUFFER_HEIGHT    PNX8550_FRAMEBUFFER_HEIGHT_NTSC
+#define FRAME_BUFFER_WIDTH          PNX8550_FRAMEBUFFER_WIDTH
+#define STRIDE                      PNX8550_FRAMEBUFFER_STRIDE
 
 /* Macros defining the I2C operations to initialise Anabel */
 #define I2C_ANABEL_ADDR                0xCC
@@ -443,14 +441,14 @@ static const int horz[4] = {223, 288, 347, 410};
 #define STARTUP_IMAGE_HT (416)
 
 /* Function used to initialise the splash screen */
-void pnx8550_setupDisplay(int pal, int high_mem, unsigned int background)
+void pnx8550_setupDisplay(int pal, unsigned int fb_base, unsigned int background)
 {
     int i;
     int * pDisplayData;
 
     height = pal ? PAL_FRAME_BUFFER_HEIGHT : NTSC_FRAME_BUFFER_HEIGHT;
     /* Set up the display to use the same memory location as the frame buffer (128MB version only so far!) */
-    pDisplayData = high_mem ? (int*)FRAME_BUFFER_LOCATION_HIGH_MEM : (int*)FRAME_BUFFER_LOCATION;
+    pDisplayData = (int*)fb_base;
     remapPtr = ioremap((int)pDisplayData, FRAME_BUFFER_WIDTH*height*sizeof(int));
     /* Clear the display to background colour */
     for(i=0; i<720*height; i++)
