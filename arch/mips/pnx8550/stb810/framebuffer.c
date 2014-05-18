@@ -141,18 +141,19 @@ static struct platform_driver pnx8550_framebuffer_driver = {
 
 static struct platform_device *pnx8550_framebuffer_device;
 
+extern void pnx8550_setupDisplay(int pal);
+
 static int __init pnx8550_framebuffer_init(void)
 {
 	int ret = 0;
-
-#ifndef MODULE
 	char *option = NULL;
 
 	if (fb_get_options("pnx8550fb", &option))
 		return -ENODEV;
 	//pnx8550_framebuffer_setup(option);
-#endif
 
+	pnx8550_setupDisplay(1);
+	
 	ret = platform_driver_register(&pnx8550_framebuffer_driver);
 
 	if (!ret) {

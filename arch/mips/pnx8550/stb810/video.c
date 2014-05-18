@@ -24,12 +24,6 @@
 #include <int.h>
 #include <framebuffer.h>
 
-/* Macros defining the frame buffer display attributes */
-#define PAL_FRAME_BUFFER_HEIGHT     PNX8550_FRAMEBUFFER_HEIGHT_PAL
-#define NTSC_FRAME_BUFFER_HEIGHT    PNX8550_FRAMEBUFFER_HEIGHT_NTSC
-#define FRAME_BUFFER_WIDTH          PNX8550_FRAMEBUFFER_WIDTH
-#define STRIDE                      PNX8550_FRAMEBUFFER_STRIDE
-
 /* Macros defining the I2C operations to initialise Anabel */
 #define I2C_ANABEL_ADDR                0xCC
 #define I2C_HP_BASE                    0x46000
@@ -358,7 +352,7 @@ static void setupScart(void)
 }
 
 /* Function used to set up PAL/NTSC using the QVCP */
-static void setupQVCP(int* pBuffer, int pal)
+static void setupQVCP(unsigned int buffer, int pal)
 {
     outl(0x03, PCI_BASE | 0x047a00);
     outl(0x0b, PCI_BASE | 0x047a04);
@@ -396,14 +390,14 @@ static void setupQVCP(int* pBuffer, int pal)
     outl(0x0, PCI_BASE | 0x10e060);
     outl(0x00130013, PCI_BASE | 0x10e070);
     outl(0x803F3F3F, PCI_BASE | 0x10e074);
-    outl((int)pBuffer, PCI_BASE | 0x10e200);
-    outl(STRIDE*4, PCI_BASE | 0x10e204);
-    outl(STRIDE*2, PCI_BASE | 0x10e208);
-    outl((int)pBuffer + (STRIDE*2), PCI_BASE | 0x10e20c);
-    outl(STRIDE*4, PCI_BASE | 0x10e210);
+    outl(buffer, PCI_BASE | 0x10e200);
+    outl(PNX8550_FRAMEBUFFER_STRIDE*4, PCI_BASE | 0x10e204);
+    outl(PNX8550_FRAMEBUFFER_STRIDE*2, PCI_BASE | 0x10e208);
+    outl(buffer + (PNX8550_FRAMEBUFFER_STRIDE*2), PCI_BASE | 0x10e20c);
+    outl(PNX8550_FRAMEBUFFER_STRIDE*4, PCI_BASE | 0x10e210);
     outl(8, PCI_BASE | 0x10e214);
     outl(0x80000000 | (16<<16)|(0x30), PCI_BASE | 0x10e230);
-    outl(FRAME_BUFFER_WIDTH, PCI_BASE | 0x10e2b4);
+    outl(PNX8550_FRAMEBUFFER_WIDTH, PCI_BASE | 0x10e2b4);
     outl(0xec, PCI_BASE | 0x10e2bc);
     outl(0x20, PCI_BASE | 0x10e23c);
     outl(0x0, PCI_BASE | 0x10e238);
@@ -423,38 +417,11 @@ static void setupQVCP(int* pBuffer, int pal)
     outl(0x1, PCI_BASE | 0x10e240);
 }
 
-/* Pointer to frame buffer memory */
-static int* remapPtr = NULL;
-/* Height of display output */
-static int height;
-
-/* Location of '810' characters on the splash screen image */
-static const int vert[2] = {235, 315};
-static const int horz[4] = {223, 288, 347, 410};
-
-#define BOOT_TIME        (35)
-#define INTS_PER_SEC     (25)
-#define MAX_INTS         (BOOT_TIME*INTS_PER_SEC)
-#define STARTUP_IMAGE_HT (416)
-
 /* Function used to initialise the splash screen */
-void pnx8550_setupDisplay(int pal, unsigned int fb_base, unsigned int background)
+void pnx8550_setupDisplay(int pal)
 {
-    int i;
-    int * pDisplayData;
-
-    height = pal ? PAL_FRAME_BUFFER_HEIGHT : NTSC_FRAME_BUFFER_HEIGHT;
-    /* Set up the display to use the same memory location as the frame buffer (128MB version only so far!) */
-    pDisplayData = (int*)fb_base;
-    remapPtr = ioremap((int)pDisplayData, FRAME_BUFFER_WIDTH*height*sizeof(int));
-    /* Clear the display to background colour */
-    for(i=0; i<720*height; i++)
-    {
-        remapPtr[i] = background;
-    }
-
     /* Set up the QVCP registers */
-    setupQVCP(pDisplayData, pal);
+    setupQVCP(pnx8550_fb_base, pal);
 
     /* Set up Anabel using I2C */
     setupAnabel(pal);
