@@ -26,6 +26,8 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <asm/mach-pnx8550/glb.h>
+#include <trimedia.h>
+#include <framebuffer.h>
 
 #define HAVE_SD_DISPLAY 1
 
@@ -44,7 +46,7 @@ void *phStbMmio_Base;
 
 const char *get_system_type(void)
 {
-	return "Philips PNX8550/STB810";
+    return "Philips PNX8550/STB810";
 }
 
 /*
@@ -54,7 +56,6 @@ const char *get_system_type(void)
 void __init prom_init(void)
 {
     unsigned int mem_size;
-    unsigned long mem_region_size;
     unsigned int fb_base;
     char* argptr;
     int pal = 1;
@@ -82,20 +83,22 @@ void __init prom_init(void)
     prom_envp = (char **) fw_arg2;
 
     prom_init_cmdline();
-    /* Determine the amount of memory to allocate to the kernel, and do so. */
-    mem_size = get_system_mem_size() / (1024 * 1024);
-#ifndef STB810_MIPS_MEM_SIZE
-
-    if (mem_size >= 256)
-        mem_region_size = 128 * 1024 * 1024;
-    else if (mem_size >= 128)
-        mem_region_size = 56 * 1024 * 1024;
-    else
-        mem_region_size = mem_size * 1024 * 1024;
-#else
-    mem_region_size = STB810_MIPS_MEM_SIZE;
-#endif
-    fb_base = mem_region_size - PNX8550_FRAMEBUFFER_SIZE;
+    
+    /* TriMedia uses memory above 0x08000000 (for 256M).
+     * This memory can be used by Linux instead, but only when the TriMedias
+     * are guaranteed to be (and stay) stopped.
+     * We stop them here in case something left them running. If some driver
+     * starts them, Linux will crash. In fact, just loading a TriMedia memory
+     * image will overwrite some "random" Linux memory region and can thus
+     * cause a crash. */
+    PNX8550_TM0_CTL = PNX8550_TM_CTL_STOP_AND_RESET;
+    PNX8550_TM1_CTL = PNX8550_TM_CTL_STOP_AND_RESET;
+    
+    /* Determine the amount of memory installed and allocate all of that to
+     * the kernel. The only exception is the framebuffer placed right at the
+     * end of physical memory. */
+    mem_size = get_system_mem_size();
+    fb_base = mem_size - PNX8550_FRAMEBUFFER_SIZE;
     add_memory_region(0, fb_base, BOOT_MEM_RAM);
     add_memory_region(fb_base, PNX8550_FRAMEBUFFER_SIZE, BOOT_MEM_RESERVED);
 
