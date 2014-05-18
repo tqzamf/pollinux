@@ -2,8 +2,10 @@
 sync
 if [ "$1" == 0 ]; then
 	umount -far
+	sleep 1
 	exec poweroff -f
 elif [ "$1" == 6 ]; then
 	umount -far
+	sleep 1
 	exec reboot -f
 fi

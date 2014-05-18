@@ -41,6 +41,7 @@ extern unsigned long get_system_mem_size(void);
 extern void pnx8550_setupDisplay(int pal, int high_mem, unsigned int background);
 #endif
 void *phStbMmio_Base;
+extern int __init pnx8550_gpio_init(void);
 
 //static char my_cmdline[COMMAND_LINE_SIZE] = {"console=ttyS1 stb810_display=pal"};
 
