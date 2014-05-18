@@ -24,9 +24,6 @@
 #include <int.h>
 #include <framebuffer.h>
 
-/* Include the GIF format data to be displayed as the splash screen */
-#include "image.c"
-
 /* Macros defining the frame buffer display attributes */
 #define PAL_FRAME_BUFFER_HEIGHT     PNX8550_FRAMEBUFFER_HEIGHT_PAL
 #define NTSC_FRAME_BUFFER_HEIGHT    PNX8550_FRAMEBUFFER_HEIGHT_NTSC
@@ -455,8 +452,6 @@ void pnx8550_setupDisplay(int pal, unsigned int fb_base, unsigned int background
     {
         remapPtr[i] = background;
     }
-    /* Decode the startup image to the centre of the frame buffer */
-    phStbGif_Decode( startupData, STARTUP_DATA_LENGTH, remapPtr, FRAME_BUFFER_WIDTH, height, FRAME_BUFFER_WIDTH/2, height/2);
 
     /* Set up the QVCP registers */
     setupQVCP(pDisplayData, pal);
@@ -467,71 +462,3 @@ void pnx8550_setupDisplay(int pal, unsigned int fb_base, unsigned int background
     /* Set up the Scart switch (if present) */
     setupScart();
 }
-
-void pnx8550_irqDisplay(void)
-{
-    static int count = 0;
-    static int currentLine = -1;
-    count++;
-
-    /* Check to see if the frame buffer has been cleared - or we have run out of time */
-    if ((remapPtr != NULL) &&
-        ((remapPtr[0]&0xFF000000) != 0) &&
-        (count<MAX_INTS))
-    {
-        int line;
-
-        /* Check is the next line of '810' should be filled in with colour */
-        line = (count * (vert[1] - vert[0]))/MAX_INTS;
-        if (line != currentLine)
-        {
-            int i;
-            currentLine = line;
-            line = ((height - STARTUP_IMAGE_HT)/2) + vert[1] - currentLine;
-            for(i=horz[0]; i<horz[1]; i++)
-            {
-                if ((remapPtr[(line*720)+i]&0xFF) < 200)
-                {
-                    remapPtr[(line*720)+i] = 0xFFFFAE00; /* Orange */
-                }
-            }
-            for(i=horz[1]; i<horz[2]; i++)
-            {
-                if ((remapPtr[(line*720)+i]&0xFF) < 200)
-                {
-                    remapPtr[(line*720)+i] = 0xFF70A9D4; /* Blue */
-                }
-            }
-            for(i=horz[2]; i<horz[3]; i++)
-            {
-                if ((remapPtr[(line*720)+i]&0xFF) < 200)
-                {
-                    remapPtr[(line*720)+i] = 0xFFC7CF00; /* Green */
-                }
-            }
-        }
-
-        /* Check if the animated Gif should be updated */
-        if ((count % 3) ==0)
-        {
-            phStbGif_Decode( animationData, ANIMATION_DATA_LENGTH, remapPtr,
-                             FRAME_BUFFER_WIDTH, height,
-                             150, height == PAL_FRAME_BUFFER_HEIGHT ? 240 : 200);
-        }
-    }
-    else
-    {
-        int configPR;
-        /* Stop the timer */
-        configPR = read_c0_config7();
-        configPR |= 0x00000010;
-        write_c0_config7(configPR);
-        if(remapPtr != NULL)
-        {
-            /* Unmap the frame buffer memory */
-            iounmap(remapPtr);
-        }
-    }
-}
-
-

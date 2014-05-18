@@ -33,6 +33,7 @@
 
 int prom_argc;
 char **prom_argv, **prom_envp;
+unsigned int pnx8550_fb_base;
 extern void  __init prom_init_cmdline(void);
 extern char *prom_getenv(char *envname);
 extern char *prom_getcmdline(void);
@@ -102,6 +103,7 @@ void __init prom_init(void)
     fb_base = mem_size - PNX8550_FRAMEBUFFER_SIZE;
     add_memory_region(0, fb_base, BOOT_MEM_RAM);
     add_memory_region(fb_base, PNX8550_FRAMEBUFFER_SIZE, BOOT_MEM_RESERVED);
+    pnx8550_fb_base = fb_base;
 
 #if HAVE_SD_DISPLAY
     argptr = prom_getcmdline();
