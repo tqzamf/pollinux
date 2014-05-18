@@ -147,12 +147,21 @@ static int __init pnx8550_framebuffer_init(void)
 {
 	int ret = 0;
 	char *option = NULL;
+	int pal = 1; /* default is PAL */
 
 	if (fb_get_options("pnx8550fb", &option))
 		return -ENODEV;
-	//pnx8550_framebuffer_setup(option);
-
-	pnx8550_setupDisplay(1);
+	
+	if (option) {
+		if (!strcasecmp(option, "ntsc")) {
+			pal = 0;
+			var.yres_virtual = var.yres = PNX8550_FRAMEBUFFER_HEIGHT_NTSC;
+		} else if (!strcasecmp(option, "pal")) {
+			pal = 1;
+			var.yres_virtual = var.yres = PNX8550_FRAMEBUFFER_HEIGHT_PAL;
+		}
+	}
+	pnx8550_setupDisplay(pal);
 	
 	ret = platform_driver_register(&pnx8550_framebuffer_driver);
 
