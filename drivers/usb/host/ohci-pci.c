@@ -281,17 +281,6 @@ static int __devinit ohci_pci_start (struct usb_hcd *hcd)
 	if (hcd->self.controller) {
 		struct pci_dev *pdev = to_pci_dev(hcd->self.controller);
 
-		//XXX: a strange "else if" without an if???
-		else if((PCI_VENDOR_ID_PHILIPS == pdev->vendor) && (0x1561 == pdev->device))
-		{
-			// Reset retry count
-			u32 temp;
-			pci_read_config_dword(pdev, 0x40, &temp);
-			ohci_dbg(ohci, "OHCI RESET RETRY COUNT to 0 from %08x\n", temp);
-
-			pci_write_config_dword(pdev, 0x40, 0x0000);
-		}
-
 		/* RWC may not be set for add-in PCI cards, since boot
 		 * firmware probably ignored them.  This transfers PCI
 		 * PM wakeup capabilities.

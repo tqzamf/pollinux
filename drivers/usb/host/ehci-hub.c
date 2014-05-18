@@ -1065,54 +1065,6 @@ static int ehci_hub_control (
 			ehci_writel(ehci, temp, status_reg);
 			break;
 
-#ifdef EMBD_HOST_COMPLIANCE
-#define EMBD_HOST_COMP_TEST_J                   (0x1 << 16) 
-#define EMBD_HOST_COMP_TEST_K                   (0x2 << 16) 
-#define EMBD_HOST_COMP_TEST_SE0_NAK             (0x3 << 16) 
-#define EMBD_HOST_COMP_TEST_PACKET              (0x4 << 16) 
-#define EMBD_HOST_COMP_TEST_FORCE_ENABLE        (0x5 << 16) 
-		case USB_PORT_FEAT_TEST_J:
-				printk("Initial contents of portsc for %d port: 0x%x\n", wIndex, temp);
-				/* Set the port to Test J mode */
-				writel (temp | EMBD_HOST_COMP_TEST_J,
-						&ehci->regs->port_status [wIndex]);
-				temp = readl (&ehci->regs->port_status [wIndex]);
-				printk("Modified contents of portsc for %d port: 0x%x\n", wIndex, temp);                                
-				break;
-		case USB_PORT_FEAT_TEST_K:
-				printk("Initial contents of portsc for %d port: 0x%x\n", wIndex, temp);
-				/* Set the port to Test K mode */
-				writel (temp | EMBD_HOST_COMP_TEST_K,
-						&ehci->regs->port_status [wIndex]);
-				temp = readl (&ehci->regs->port_status [wIndex]);
-				printk("Modified contents of portsc for %d port: 0x%x\n", wIndex, temp);                                
-				break;
-		case USB_PORT_FEAT_TEST_SE0_NAK:
-				printk("Initial contents of portsc for %d port: 0x%x\n", wIndex, temp);
-				/* Set the port to Test SE0 NAK mode */
-				writel (temp | EMBD_HOST_COMP_TEST_SE0_NAK,
-						&ehci->regs->port_status [wIndex]);
-				temp = readl (&ehci->regs->port_status [wIndex]);
-				printk("Modified contents of portsc for %d port: 0x%x\n", wIndex, temp);                                
-				break;
-		case USB_PORT_FEAT_TEST_PACKET:
-				printk("Initial contents of portsc for %d port: 0x%x\n", wIndex, temp);
-				/* Set the port to Test Packet mode */
-				writel (temp | EMBD_HOST_COMP_TEST_PACKET,
-						&ehci->regs->port_status [wIndex]);
-				temp = readl (&ehci->regs->port_status [wIndex]);
-				printk("Modified contents of portsc for %d port: 0x%x\n", wIndex, temp);                                
-				break;
-		case USB_PORT_FEAT_TEST_FORCE_ENABLE:
-				printk("Initial contents of portsc for %d port: 0x%x\n", wIndex, temp);
-				/* Set the port to Test Force Enable mode */
-				writel (temp | EMBD_HOST_COMP_TEST_FORCE_ENABLE,
-						&ehci->regs->port_status [wIndex]);
-				temp = readl (&ehci->regs->port_status [wIndex]);
-				printk("Modified contents of portsc for %d port: 0x%x\n", wIndex, temp);                                
-				break;             
-#endif /* EMBD_HOST_COMPLIANCE */		
-
 		default:
 			goto error;
 		}
