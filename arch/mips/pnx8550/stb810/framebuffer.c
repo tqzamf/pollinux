@@ -72,8 +72,15 @@ static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_
 	return 0;
 }
 
+/* Stub to make X11 happy. It spits out annoying errors otherwise. */
+static int pnx8550_framebuffer_blank(int blank, struct fb_info *info)
+{
+	return 0;
+}
+
 static struct fb_ops ops = {
 	.fb_setcolreg	= pnx8550_framebuffer_setcolreg,
+	.fb_blank       = pnx8550_framebuffer_blank,
 	.fb_read        = fb_sys_read,
 	.fb_write       = fb_sys_write,
 	.fb_fillrect	= sys_fillrect,
