@@ -89,4 +89,8 @@ obj-$(CONFIG_I2C_STUB)		+= i2c-stub.o
 obj-$(CONFIG_SCx200_ACB)	+= scx200_acb.o
 obj-$(CONFIG_SCx200_I2C)	+= scx200_i2c.o
 
+# PNX8550 IPxxxx bus drivers
+obj-$(CONFIG_I2C_IP0105)	+= i2c-ip0105.o
+obj-$(CONFIG_I2C_IP3203)	+= i2c-ip3203.o
+
 ccflags-$(CONFIG_I2C_DEBUG_BUS) := -DDEBUG

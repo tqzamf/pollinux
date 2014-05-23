@@ -913,4 +913,9 @@ config SCx200_ACB
 	  This support is also available as a module.  If so, the module
 	  will be called scx200_acb.
 
+config I2C_IP0105
+	tristate "PNX8550 IP0105 'fast' I2C ports"
+config I2C_IP3203
+	tristate "PNX8550 IP3203 'high performance' I2C ports"
+
 endmenu
