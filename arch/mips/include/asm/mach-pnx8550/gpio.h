@@ -32,7 +32,9 @@
 #define PNX8550_GPIO_DIR_MASK(pin)  (0x10000 << ((pin) & 15))
 
 #define PNX8550_GPIO_STANDBY 12
-#define PNX8550_GPIO_CPULED 44
+#define PNX8550_GPIO_CPU_BLUE 44
+#define PNX8550_GPIO_CPU_RED 56
+#define PNX8550_GPIO_CPU_GREEN 60
 
 //this is the default configuration after boot, but why restore it?
 //#define PNX8550_GPIO_MODE_PORT0 0xffffffff

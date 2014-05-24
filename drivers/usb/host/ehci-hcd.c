@@ -314,34 +314,12 @@ static void tdi_reset (struct ehci_hcd *ehci)
 	ehci_writel(ehci, tmp, reg_ptr);
 }
 
-/* reset pandora2 USB2227 chip using GPIO 58 */
-static void pandora2_reset(struct ehci_hcd *ehci)
-{
-	// There's an issue on the pandora2 where the USB2227 chip
-	// doesn't always boot correctly. Resetting it just prior
-	// to starting the EHCI host appears to ameliorate this
-	// though it ain't pretty.
-	
-	// Setup GPIO to be used in GPIO mode
-	u32 mc = MMIO(MMIO_MC(58));
-	mc &= ~PIN_MODE_WRITE(58, 3);
-	mc |= PIN_MODE_WRITE(58, PIN_MODE_GPIO);
-	MMIO(MMIO_MC(58)) = mc;
-
-	// Set GPIO to be output and toggle low then high
-	MMIO(MMIO_IOD(58)) = PIN_DATA_WRITE(58, 0);
-	msleep(2);
-	MMIO(MMIO_IOD(58)) = PIN_DATA_WRITE(58, 1);
-}
-
-
 /* reset a non-running (STS_HALT == 1) controller */
 static int ehci_reset (struct ehci_hcd *ehci)
 {
 	int	retval;
 	u32	command;
 
-	pandora2_reset(ehci);
 	command = ehci_readl(ehci, &ehci->regs->command);
 
 	/* If the EHCI debug controller is active, special care must be
