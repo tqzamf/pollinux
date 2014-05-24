@@ -148,7 +148,7 @@ static struct platform_driver pnx8550_framebuffer_driver = {
 
 static struct platform_device *pnx8550_framebuffer_device;
 
-extern void pnx8550_setupDisplay(int pal);
+extern void pnx8550fb_setup_display(int pal);
 
 static int __init pnx8550_framebuffer_init(void)
 {
@@ -168,7 +168,7 @@ static int __init pnx8550_framebuffer_init(void)
 			var.yres_virtual = var.yres = PNX8550_FRAMEBUFFER_HEIGHT_PAL;
 		}
 	}
-	pnx8550_setupDisplay(pal);
+	pnx8550fb_setup_display(pal);
 	
 	ret = platform_driver_register(&pnx8550_framebuffer_driver);
 

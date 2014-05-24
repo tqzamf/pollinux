@@ -1,4 +1,3 @@
-
 /* This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
@@ -23,42 +22,14 @@
 #include <pci.h>
 #include <int.h>
 #include <framebuffer.h>
+#include <linux/i2c.h>
+#include <i2c.h>
 
-/* Macros defining the I2C operations to initialise Anabel */
-#define I2C_ANABEL_ADDR                0xCC
-#define I2C_HP_BASE                    0x46000
-#define I2C_HP_CONTROL                 0x000
-#define I2C_HP_STATUS                  0x004
-#define I2C_HP_DATA                    0x008
-#define I2C_HP_HIGH_SPEED              0x010
-#define I2C_HP_FSBIR                   0x014
-#define I2C_HP_DMACTRL                 0x02C
-#define I2C_HP_INTSTATUS               0xFE0
-#define I2C_HP_INTENABLE               0xFE4
-#define I2C_HP_INTCLEAR                0xFE8
-
-/* Macros defining the I2C operations to initialise Scart Switch */
-#define I2C_SCART_ADDR                 0x22
-#define I2C_FAST_BASE                  0x4C000
-#define I2C_FAST_CONTROL               0x000
-#define I2C_FAST_DATA                  0x004
-#define I2C_FAST_STATUS                0x008
-#define I2C_FAST_STOP                  0x010
-#define I2C_FAST_INTSTATUS             0xFE0
-#define I2C_FAST_INTENABLE             0xFE4
-#define I2C_FAST_INTCLEAR              0xFE8
-
-/* Return statuses for the I2C operations */
-#define I2C_OK                      0
-#define I2C_BUSY                    1
-#define I2C_ERROR                   2
-#define I2C_ARBITRATION_LOST        3
-
-/* External function used to decode an embedded GIF image */
-extern int phStbGif_Decode( const unsigned char* data, int length, unsigned int* pOutput, int width, int height, int x, int y);
+#define I2C_ANABEL_ADDR                0x66
+#define I2C_SCART_ADDR                 0x11
 
 /* Register / Data pairs used to initialise Anabel into PAL mode */
-static const unsigned char pAnabelPalVideo[] =
+static const unsigned char pnx8550fb_anabel_pal[] =
 {
     0x27,0x00,
     0x28,0x21,
@@ -116,7 +87,7 @@ static const unsigned char pAnabelPalVideo[] =
 };
 
 /* Register / Data pairs used to initialise Anabel into NTSC mode */
-static const unsigned char pAnabelNtscVideo[] =
+static const unsigned char pnx8550fb_anabel_ntsc[] =
 {
     0x27,0x00,
     0x28,0x25,
@@ -166,193 +137,59 @@ static const unsigned char pAnabelNtscVideo[] =
     0x6e,0x00
 };
 
-
 /* Register / Data information used to initialise SCART switch */
-static const unsigned char pScartSetup[] =
-{
-    0x00,0x70,0x24,0x19,0x27,0x11,0x5F,0x04,0x3D,0x00
+static const unsigned char pnx8550fb_scart_data[] = {
+    0x00,0x70,0x24,0x19,0x27,0x11,0x5F,0x04,0x3D,0x00,
 };
 
-/* Function used to send commands to an I2C client */
-void sendI2CMessage_Fast(unsigned char address, const unsigned char* message, int length)
-{
-    int dataPosition;
-    int drvStatus;
-    outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTENABLE);
-    outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTCLEAR);
-
-    dataPosition = 0;
-    /* generate Start */
-    outl(0x60, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL);
-
-    drvStatus = I2C_BUSY;
-    while(drvStatus == I2C_BUSY)
-    {
-        int Status;
-        Status = inl(PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTSTATUS);
-
-        if (Status & 0x01)
-        {
-            Status = inl(PCI_BASE | I2C_FAST_BASE | I2C_FAST_STATUS);
-            switch (Status)
-            {
-                case 0x08:  // (re)start condition
-                case 0x10:  outl(address, PCI_BASE | I2C_FAST_BASE | I2C_FAST_DATA);
-                            outl(0x40, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL);    // clear SI bit to send address
-                            outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTCLEAR);
-                            break;
-                case 0x18:  outl(message[dataPosition++], PCI_BASE | I2C_FAST_BASE | I2C_FAST_DATA);  // send next data byte
-                            outl(0x40, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL);
-                            outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTCLEAR);
-                            break;
-                case 0x20:  // no Ack received
-                            outl(0x50, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL);    // Stop condition
-                            outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTCLEAR);
-                            drvStatus = I2C_ERROR;
-                            break;
-                case 0x28:  // ack received
-                            if (dataPosition < length)
-                            {
-                                outl(message[dataPosition++], PCI_BASE | I2C_FAST_BASE | I2C_FAST_DATA);
-                                outl(0x40, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL);  // release interrupt
-                            }
-                            else
-                            {
-                                outl(0x50, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL);
-                                drvStatus = I2C_OK;
-                            }
-                            outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTCLEAR);
-                            break;
-                case 0x30: // no ACK for data byte
-                            outl(0x50, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL); // stop condition
-                            outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTCLEAR);
-                            drvStatus = I2C_ERROR;
-                            break;
-                case 0x38: // arbitration lost -> not addressed as slave
-                            outl(0x60, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL); // send start again
-                            outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTCLEAR);
-                            drvStatus = I2C_ARBITRATION_LOST;
-                            break;
-                case 0xF8:
-                case 0x00:
-                            break;
-                default:    // undefined error
-                            outl(0x50, PCI_BASE | I2C_FAST_BASE | I2C_FAST_CONTROL); // send stop
-                            outl(0x01, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTCLEAR);
-                            drvStatus = I2C_ERROR;
-                            break;
-            }
-        }
-    }
-    outl(0x00, PCI_BASE | I2C_FAST_BASE | I2C_FAST_INTENABLE);
-}
-
-/* Function used to send commands to an I2C client */
-void sendI2CMessage_HighPerformance(unsigned char address, const unsigned char* message, int length)
-{
-    int dataPosition;
-    int drvStatus;
-    outl(0x00, PCI_BASE | I2C_HP_BASE | I2C_HP_DMACTRL);
-    outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTENABLE);
-    outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTCLEAR);
-
-    dataPosition = 0;
-    /* generate Start */
-    outl(0xE0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL);
-
-    drvStatus = I2C_BUSY;
-    while(drvStatus == I2C_BUSY)
-    {
-        int Status;
-        Status = inl(PCI_BASE | I2C_HP_BASE | I2C_HP_INTSTATUS);
-
-        if (Status & 0x01)
-        {
-            Status = inl(PCI_BASE | I2C_HP_BASE | I2C_HP_STATUS);
-            switch (Status)
-            {
-                case 0x08:  // (re)start condition
-                case 0x10:  outl(address, PCI_BASE | I2C_HP_BASE | I2C_HP_DATA);
-                            outl(0xC0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL);    // clear SI bit to send address
-                            outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTCLEAR);
-                            break;
-                case 0x18:  outl(message[dataPosition++], PCI_BASE | I2C_HP_BASE | I2C_HP_DATA);  // send next data byte
-                            outl(0xC0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL);
-                            outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTCLEAR);
-                            break;
-                case 0x20:  // no Ack received
-                            outl(0xD0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL);    // Stop condition
-                            outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTCLEAR);
-                            drvStatus = I2C_ERROR;
-                            break;
-                case 0x28:  // ack received
-                            if (dataPosition < length)
-                            {
-                                outl(message[dataPosition++], PCI_BASE | I2C_HP_BASE | I2C_HP_DATA);
-                                outl(0xC0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL);   // release interrupt
-                            }
-                            else
-                            {
-                                outl(0xD0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL);
-                                drvStatus = I2C_OK;
-                            }
-                            outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTCLEAR);
-                            break;
-                case 0x30: // no ACK for data byte
-                            outl(0xD0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL); // stop condition
-                            outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTCLEAR);
-                            drvStatus = I2C_ERROR;
-                            break;
-                case 0x38: // arbitration lost -> not addressed as slave
-                            outl(0xE0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL); // send start again
-                            outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTCLEAR);
-                            drvStatus = I2C_ARBITRATION_LOST;
-                            break;
-                case 0xF8:
-                case 0x00:
-                            break;
-                default:    // undefined error
-                            outl(0xD0, PCI_BASE | I2C_HP_BASE | I2C_HP_CONTROL); // send stop
-                            outl(0x01, PCI_BASE | I2C_HP_BASE | I2C_HP_INTCLEAR);
-                            drvStatus = I2C_ERROR;
-                            break;
-            }
-        }
-    }
-    outl(0x00, PCI_BASE | I2C_HP_BASE | I2C_HP_INTENABLE);
-}
-
-/* Function used to set up PAL/NTSC using Anabel */
-static void setupAnabel(int pal)
-{
-    int i;
-    outl(0x16, PCI_BASE | I2C_HP_BASE | I2C_HP_HIGH_SPEED);
-    outl(0x8A, PCI_BASE | I2C_HP_BASE | I2C_HP_FSBIR);
-
-    if (pal)
-    {
-        for(i=0; i<sizeof(pAnabelPalVideo); i+=2)
-        {
-            sendI2CMessage_HighPerformance(I2C_ANABEL_ADDR, &pAnabelPalVideo[i], 2);
-        }
-    }
-    else
-    {
-        for(i=0; i<sizeof(pAnabelNtscVideo); i+=2)
-        {
-            sendI2CMessage_HighPerformance(I2C_ANABEL_ADDR, &pAnabelNtscVideo[i], 2);
-        }
-    }
-}
+static struct i2c_msg pnx8550fb_scart_msg = {
+	.addr = I2C_SCART_ADDR,
+	.flags = 0,
+	.len = sizeof(pnx8550fb_scart_data),
+	.buf = (unsigned char *) pnx8550fb_scart_data,
+};
 
 /* Function used to set up Scart switch */
-static void setupScart(void)
+static void pnx8550fb_setup_scart(void)
 {
-    sendI2CMessage_Fast(I2C_SCART_ADDR, pScartSetup, sizeof(pScartSetup));
+	struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP0105_BUS1);
+	if ((i2c_transfer(adapter, &pnx8550fb_scart_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error\n", __func__);
+}
+
+static struct i2c_msg pnx8550fb_anabel_msg = {
+	.addr = I2C_ANABEL_ADDR,
+	.flags = 0,
+	.len = 2,
+};
+
+/* Function used to set up PAL/NTSC using Anabel */
+static void pnx8550fb_setup_anabel(int pal)
+{
+    int i, len;
+    const unsigned char *data;
+    struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
+
+    if (pal) {
+		data = pnx8550fb_anabel_pal;
+		len = sizeof(pnx8550fb_anabel_pal);
+	} else {
+		data = pnx8550fb_anabel_ntsc;
+		len = sizeof(pnx8550fb_anabel_ntsc);
+	}
+
+	for(i=0; i<len; i+=2)
+	{
+		pnx8550fb_anabel_msg.buf = (unsigned char *) &data[i];
+		if ((i2c_transfer(adapter, &pnx8550fb_anabel_msg, 1)) != 1) {
+			printk(KERN_ERR "%s: write error at %d\n", __func__, i);
+			break;
+		}
+	}
 }
 
 /* Function used to set up PAL/NTSC using the QVCP */
-static void setupQVCP(unsigned int buffer, int pal)
+static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
 {
     outl(0x03, PCI_BASE | 0x047a00);
     outl(0x0b, PCI_BASE | 0x047a04);
@@ -418,14 +255,14 @@ static void setupQVCP(unsigned int buffer, int pal)
 }
 
 /* Function used to initialise the splash screen */
-void pnx8550_setupDisplay(int pal)
+void pnx8550fb_setup_display(int pal)
 {
     /* Set up the QVCP registers */
-    setupQVCP(pnx8550_fb_base, pal);
+    pnx8550fb_setup_QVCP(pnx8550_fb_base, pal);
 
     /* Set up Anabel using I2C */
-    setupAnabel(pal);
+    pnx8550fb_setup_anabel(pal);
 
     /* Set up the Scart switch (if present) */
-    setupScart();
+    pnx8550fb_setup_scart();
 }
