@@ -62,9 +62,13 @@ void __init prom_init(void)
      * We stop them here in case something left them running. If some driver
      * starts them, Linux will crash. In fact, just loading a TriMedia memory
      * image will overwrite some "random" Linux memory region and can thus
-     * cause a crash. */
+     * cause a crash.
+     * We then also power them down, both for power saving and to make it even
+     * harder to restart them unintentionally. */
     PNX8550_TM0_CTL = PNX8550_TM_CTL_STOP_AND_RESET;
     PNX8550_TM1_CTL = PNX8550_TM_CTL_STOP_AND_RESET;
+    PNX8550_TM0_POWER_CTL = PNX8550_TM_POWER_CTL_REQ_POWERDOWN;
+    PNX8550_TM1_POWER_CTL = PNX8550_TM_POWER_CTL_REQ_POWERDOWN;
     
     /* Determine the amount of memory installed and allocate all of that to
      * the kernel. The only exception is the framebuffer placed right at the
