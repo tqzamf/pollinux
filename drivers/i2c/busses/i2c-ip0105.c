@@ -49,6 +49,7 @@ Project include files:
 #include <asm/irq.h>
 #include <asm/uaccess.h>
 #include <asm/mach-pnx8550/int.h>
+#include <asm/mach-pnx8550/i2c.h>
 
 #ifndef FALSE
 #define FALSE 0
@@ -997,86 +998,6 @@ static int ip0105_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg msgs[], int 
         return num;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-static int algo_control(struct i2c_adapter *i2c_adap, unsigned int cmd, unsigned long arg)
-{
-        struct I2cBusObject * busptr =  (struct I2cBusObject *)i2c_adap->algo_data;
-        switch (cmd)
-        {
-        case I2C_SET_SLAVE_ADDRESS:
-                if (busptr->slv_enabled)
-                        return -EBUSY;
-                else
-                {
-                        WRITE_IP0105_I2C_ADDRESS( busptr, I2CADDRESS( arg )); /* >> 1 */; /* 7 bits address, No General call support */
-dev_dbg(&i2c_adap->dev, "Set Own adress to %x\n", READ_IP0105_I2C_ADDRESS(busptr));
-                }
-                break;
-        case I2C_SET_SLAVE_ENABLE:
-                if (arg)
-                {
-                        if( !busptr->slv_enabled )
-                        {
-                               unsigned int len = (unsigned int)arg;
-                               len++;  // Need an extra byte for the length
-                               busptr->slv_buf = kmalloc(len, GFP_KERNEL);
-                               if (NULL != busptr->slv_buf)
-                               {
-                                       busptr->slv_usr_notify = &i2c_adap->fasync;
-                                       busptr->slv_bufindex = 1;
-                                       busptr->slv_buflen = 0; // todo : slave transmitter, but we can only reveive
-                                       busptr->slv_bufsize = len;
-
-                                       busptr->slv_enabled = TRUE;
-                                       AAOUT( busptr, 1 ); /* ACK bit will be returned after slave address reception */
-                                       dev_dbg(&i2c_adap->dev, "Enable Slave\n");
-                               }
-
-                               else return -ENOMEM;
-                        }
-                        else return -EBUSY;
-                }
-                else
-                {
-                        busptr->slv_usr_notify = NULL;
-                        busptr->slv_bufsize    = 0;
-                        AAOUT( busptr, 0 ); /* ACK will not be sent after slave address reception */
-                        busptr->slv_enabled = FALSE;
-
-                        if (NULL != busptr->slv_buf)
-                        {
-                            kfree(busptr->slv_buf);  // kfree returns void, no check needed
-                        }
-                        busptr->slv_bufindex  = 0;
-                        busptr->slv_buflen    = 0;
-
-dev_dbg(&i2c_adap->dev, "Disable Slave\n");
-                }
-                break;
-      case I2C_GET_SLAVE_DATA:
-                {
-                        unsigned long ret;
-                        unsigned char * user_data = (unsigned char *)arg;
-                        unsigned char nr_of_bytes = busptr->slv_bufindex -1;
-
-                        busptr->slv_buf[0] = nr_of_bytes;
-                        ret = copy_to_user(user_data, busptr->slv_buf, busptr->slv_bufindex);
-                        busptr->slv_bufindex = 1;
-                        if (busptr->slv_enabled == TRUE)
-                        {
-                                AAOUT( busptr, 1);  /* ACK bit will be returned after slave address reception */
-                        }
-                        if (0 == busptr->slv_buf[0])
-                        {
-                                return -ENODATA;
-                        }
-                }
-                break;
-        }
-        return 0;
-}
-#endif
-
 static u32 ip0105_func(struct i2c_adapter *adap)
 {
         return I2C_FUNC_SMBUS_EMUL | I2C_FUNC_PROTOCOL_MANGLING | I2C_FUNC_I2C;
@@ -1086,16 +1007,10 @@ static u32 ip0105_func(struct i2c_adapter *adap)
 
 static struct i2c_algorithm ip0105_algo_0 = {
         .master_xfer = ip0105_xfer,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-        .algo_control = algo_control,                   /* ioctl                */
-#endif
         .functionality = ip0105_func,                     /* functionality        */
 };
 static struct i2c_algorithm ip0105_algo_1 = {
         .master_xfer = ip0105_xfer,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,24)
-        .algo_control = algo_control,
-#endif
         .functionality = ip0105_func,
 };
 static struct i2c_algorithm * ip0105_algo[NR_I2C_DEVICES] = { &ip0105_algo_0, &ip0105_algo_1 };
@@ -1143,20 +1058,14 @@ int i2c_ip0105_del_bus(struct i2c_adapter *i2c_adap)
 }
 
 static struct i2c_adapter ip0105_ops_0 = {
-       .name = "IP0105 0",                        // name
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 31)
-       .id = FAST_I2C_PORT_3,                // id
-#endif
+       .name = "IP0105 bus 0",                        // name
        .algo_data = &ip0105_i2cbus[0], // algo_data
-       .nr = 2,
+       .nr = PNX8550_I2C_IP0105_BUS0,
 };
 static struct i2c_adapter ip0105_ops_1 = {
-       .name = "IP0105 1",
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 31)
-       .id = FAST_I2C_PORT_4,
-#endif
+       .name = "IP0105 bus 1",
        .algo_data = &ip0105_i2cbus[1], // algo_data
-       .nr = 3,
+       .nr = PNX8550_I2C_IP0105_BUS1,
 };
 static struct i2c_adapter * ip0105_ops[NR_I2C_DEVICES] = { &ip0105_ops_0, &ip0105_ops_1 };
 
