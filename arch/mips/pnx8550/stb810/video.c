@@ -139,7 +139,17 @@ static const unsigned char pnx8550fb_anabel_ntsc[] =
 
 /* Register / Data information used to initialise SCART switch */
 static const unsigned char pnx8550fb_scart_data[] = {
-    0x00,0x70,0x24,0x19,0x27,0x11,0x5F,0x04,0x3D,0x00,
+    0x00, // address byte: start with first register
+    0x70, // STBY, MUTE, DAPD=normal operation, manual startup, audio 24-bit I²S without de-emphasis
+    0x64, // main audio = stereo from DAC, unused audio = mute, main volume unmuted
+    0x19, // main volume = -12dB
+    0x27, // main volume transition = 2048ck, DAC volume = ±0dB, unused audio = stereo
+    0x11, // SCART = encoder CVBS + RGB, S-Video = encoder Y+C, RCA = encoder CVBS
+    0x5F, // TV CVBS, R, G, B, FB = enabled, S-Video CVBS = enabled, S-Video C = disabled
+    0x04, // RGB gain +6dB, DC restore = encoder CVBS, VCR clamp = Y/C, encoder clamp = RGB
+    0x8D, // TV FB = +4V, TV SB = output +12V, VCR SB = input
+    0x00, // (readonly status register)
+    0x9E, // video detection masked, interrupts disabled (because nothing expects them)
 };
 
 static struct i2c_msg pnx8550fb_scart_msg = {
