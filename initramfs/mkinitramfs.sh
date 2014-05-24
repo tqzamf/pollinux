@@ -1,4 +1,5 @@
 #!/bin/bash
+export KCONFIG_NOTIMESTAMP=1
 make -C busybox install
 cat >files.tmp <<EOF
 dir proc 755 0 0
