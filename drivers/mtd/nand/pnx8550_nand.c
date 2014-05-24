@@ -42,13 +42,13 @@ Rev Date       Author      Comments
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/mtd/mtd.h>
+#include <linux/mtd/partitions.h>
 #include <linux/mtd/nand.h>
 #include <linux/mtd/nand_ecc.h>
-#include <linux/mtd/compatmac.h>
 #include <linux/interrupt.h>
-#include <linux/mtd/partitions.h>
 #include <asm/io.h>
 #include <asm/mach-pnx8550/nand.h>
+#include "../mtdcore.h"
 
 /******************************************************************************
 * LOCAL MACROS                                                                *
