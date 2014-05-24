@@ -3,8 +3,7 @@
  *
  * Copyright (C) 2000 Ralph Metzler & Marcus Metzler
  *		      for convergence integrated media GmbH
- * Copyright (C) 2006 NXP N.V.
- * 
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public License
  * as published by the Free Software Foundation; either version 2.1
@@ -580,20 +579,6 @@ static int dvb_dmxdev_start_feed(struct dmxdev *dmxdev,
 
 	ts_pes = para->pes_type;
 
-#ifdef CONFIG_SOC_PNX8550
-        /* only mark packets to go to the decoder if the output type is DECODER */
-		if (otype == DMX_OUT_DECODER)
-			ts_type = TS_DECODER | TS_PAYLOAD_ONLY;
-
-		else if (otype == DMX_OUT_TS_TAP)
-			ts_type = TS_PACKET;
-
-		else if (otype == DMX_OUT_TAP)
-			ts_type = TS_PAYLOAD_ONLY|TS_PACKET;
-		else
-			ts_type = 0;
-#else
-
 	if (ts_pes < DMX_PES_OTHER)
 		ts_type = TS_DECODER;
 	else
@@ -605,8 +590,6 @@ static int dvb_dmxdev_start_feed(struct dmxdev *dmxdev,
 		ts_type |= TS_PACKET | TS_DEMUX;
 	else if (otype == DMX_OUT_TAP)
 		ts_type |= TS_PACKET | TS_DEMUX | TS_PAYLOAD_ONLY;
-
-#endif
 
 	ret = dmxdev->demux->allocate_ts_feed(dmxdev->demux, &feed->ts,
 					      dvb_dmxdev_ts_callback);

@@ -50,7 +50,6 @@
 #if defined(CONFIG_PPC_PS3)
 #include <asm/firmware.h>
 #endif
-#include <asm/mach-pnx8550/gpio.h>
 
 /*-------------------------------------------------------------------------*/
 
@@ -318,9 +317,7 @@ static void tdi_reset (struct ehci_hcd *ehci)
 static int ehci_reset (struct ehci_hcd *ehci)
 {
 	int	retval;
-	u32	command;
-
-	command = ehci_readl(ehci, &ehci->regs->command);
+	u32	command = ehci_readl(ehci, &ehci->regs->command);
 
 	/* If the EHCI debug controller is active, special care must be
 	 * taken before and after a host controller reset */

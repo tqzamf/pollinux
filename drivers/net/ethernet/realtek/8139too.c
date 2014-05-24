@@ -195,8 +195,8 @@ static int debug = -1;
 
 /* The following settings are log_2(bytes)-4:  0 == 16 bytes .. 6==1024, 7==end of packet. */
 #define RX_FIFO_THRESH	7	/* Rx buffer level before first PCI xfer.  */
-#define RX_DMA_BURST	1	/* Small PCI burst, '1' is 32 bytes */
-#define TX_DMA_BURST	1	/* Small PCI burst, '1' is 32 bytes */
+#define RX_DMA_BURST	7	/* Maximum PCI burst, '6' is 1024 */
+#define TX_DMA_BURST	6	/* Maximum PCI burst, '6' is 1024 */
 #define TX_RETRY	8	/* 0-15.  retries = 16 + (TX_RETRY * 16) */
 
 /* Operational parameters that usually are not changed. */
@@ -632,8 +632,6 @@ MODULE_PARM_DESC (media, "8139too: Bits 4+9: force full duplex, bit 5: 100Mbps")
 MODULE_PARM_DESC (full_duplex, "8139too: Force full duplex for board(s) (1)");
 
 static int read_eeprom (void __iomem *ioaddr, int location, int addr_len);
-static void write_eeprom(void __iomem *ioaddr, int location, int value, int addr_len);
-static void enable_write_eeprom(void __iomem *ioaddr, int enable, int addr_len);
 static int rtl8139_open (struct net_device *dev);
 static int mdio_read (struct net_device *dev, int phy_id, int location);
 static void mdio_write (struct net_device *dev, int phy_id, int location,
@@ -1016,19 +1014,6 @@ static int __devinit rtl8139_init_one (struct pci_dev *pdev,
 	assert (ioaddr != NULL);
 
 	addr_len = read_eeprom (ioaddr, 0, 8) == 0x8129 ? 8 : 6;
-
-#if 0
-	{
-		u8 test_mac[6] = { 0, 1, 2, 0x77, 4, 0x88 };
-		enable_write_eeprom(ioaddr, 1, addr_len);
-
-		for(i = 0; i < 3; ++i)
-			write_eeprom(ioaddr, i + 7, cpu_to_le16(((const u16 *)test_mac)[i]), addr_len);
-
-		enable_write_eeprom(ioaddr, 0, addr_len);
-	}
-#endif
-
 	for (i = 0; i < 3; i++)
 		((__le16 *) (dev->dev_addr))[i] =
 		    cpu_to_le16(read_eeprom (ioaddr, i + 7, addr_len));
@@ -1221,86 +1206,6 @@ static int __devinit read_eeprom (void __iomem *ioaddr, int location, int addr_l
 
 	return retval;
 }
-
-static void enable_write_eeprom(void __iomem *ioaddr, int enable, int addr_len)
-{
-	int i;
-	int enable_cmd = ((enable ? 0x4f : 0x40) << (addr_len - 4));
-
-	RTL_W8 (Cfg9346, EE_ENB & ~EE_CS);
-	RTL_W8 (Cfg9346, EE_ENB);
-	eeprom_delay ();
-
-	/* Shift the read command bits out. */
-	for (i = 4 + addr_len; i >= 0; i--) {
-		int dataval = (enable_cmd & (1 << i)) ? EE_DATA_WRITE : 0;
-		RTL_W8 (Cfg9346, EE_ENB | dataval);
-		eeprom_delay ();
-		RTL_W8 (Cfg9346, EE_ENB | dataval | EE_SHIFT_CLK);
-		eeprom_delay ();
-	}
-	RTL_W8 (Cfg9346, EE_ENB);
-	eeprom_delay ();
-
-	/* Terminate the EEPROM access. */
-	RTL_W8 (Cfg9346, ~EE_CS);
-	eeprom_delay ();
-
-#if 0
-	printk("Waiting for ROM operation\n");
-	/* Now wait for it to actually go out */
-	RTL_W8 (Cfg9346, EE_ENB);
-	for(i = 0; i < 40000; ++i)
-		if (RTL_R8(Cfg9346) & EE_DATA_READ)
-			break;
-	printk("ROM operation complete after %d\n", i);
-#endif
-}	
-
-static void write_eeprom(void __iomem *ioaddr, int location, int value, int addr_len)
-{
-	int i;
-	int write_cmd = location | (EE_WRITE_CMD << addr_len);
-
-//	printk("Write eeprom: %0x = %04x\n", location, value);
-
-	RTL_W8 (Cfg9346, EE_ENB & ~EE_CS);
-	RTL_W8 (Cfg9346, EE_ENB);
-	eeprom_delay ();
-
-	/* Shift the read command bits out. */
-	for (i = 4 + addr_len; i >= 0; i--) {
-		int dataval = (write_cmd & (1 << i)) ? EE_DATA_WRITE : 0;
-		RTL_W8 (Cfg9346, EE_ENB | dataval);
-		eeprom_delay ();
-		RTL_W8 (Cfg9346, EE_ENB | dataval | EE_SHIFT_CLK);
-		eeprom_delay ();
-	}
-	RTL_W8 (Cfg9346, EE_ENB);
-	eeprom_delay ();
-
-	// Shift the value out
-	for (i = 15; i >= 0; i--) {
-		int dataval = (value & (1 << i)) ? EE_DATA_WRITE : 0;
-		RTL_W8 (Cfg9346, EE_ENB | dataval);
-		eeprom_delay ();
-		RTL_W8 (Cfg9346, EE_ENB | dataval | EE_SHIFT_CLK);
-		eeprom_delay ();
-	}
-
-	/* Terminate the EEPROM access. */
-	RTL_W8 (Cfg9346, ~EE_CS);
-	eeprom_delay ();
-
-//	printk("Waiting for ROM operation\n");
-	/* Now wait for it to actually go out */
-	RTL_W8 (Cfg9346, EE_ENB);
-	for(i = 0; i < 40000; ++i)
-		if (RTL_R8(Cfg9346) & EE_DATA_READ)
-			break;
-//	printk("ROM operation complete after %d\n", i);
-}	
-
 
 /* MII serial management: mostly bogus for now. */
 /* Read and write the MII management registers using software-generated
@@ -2591,107 +2496,6 @@ static void rtl8139_get_strings(struct net_device *dev, u32 stringset, u8 *data)
 	memcpy(data, ethtool_stats_keys, sizeof(ethtool_stats_keys));
 }
 
-static int rtl8139_get_eeprom_len(struct net_device *dev)
-{
-        struct rtl8139_private *np = netdev_priv(dev);
-        int size;
-
-        spin_lock_irq(&np->lock);
-        size = read_eeprom(np->mmio_addr, 0, 8) == 0x8129 ? 256 : 128;
-        spin_unlock_irq(&np->lock);
-
-        return size;
-}
-
-#define RTL8139_EEPROM_MAGIC PCI_DEVICE_ID_REALTEK_8139
-
-static int rtl8139_get_eeprom(struct net_device *dev,
-			      struct ethtool_eeprom *eeprom, u8 *data)
-{
-        struct rtl8139_private *np = netdev_priv(dev);
-        unsigned int addr_len;
-        u16 val;
-        u32 offset = eeprom->offset >> 1;
-        u32 len = eeprom->len;
-        u32 i = 0;
-
-        eeprom->magic = RTL8139_EEPROM_MAGIC;
-
-        spin_lock_irq(&np->lock);
-
-        addr_len = read_eeprom(np->mmio_addr, 0, 8) == 0x8129 ? 8 : 6;
-
-        if (eeprom->offset & 1) {
-                val = read_eeprom(np->mmio_addr, offset, addr_len);
-                data[i++] = (u8)(val >> 8);
-                offset++;
-        }
-
-        while (i < len - 1) {
-                val = read_eeprom(np->mmio_addr, offset, addr_len);
-                data[i++] = (u8)val;
-                data[i++] = (u8)(val >> 8);
-                offset++;
-        }
-
-        if (i < len) {
-                val = read_eeprom(np->mmio_addr, offset, addr_len);
-                data[i] = (u8)val;
-        }
-
-        spin_unlock_irq(&np->lock);
-        return 0;
-}
-
-static int rtl8139_set_eeprom(struct net_device *dev,
-			      struct ethtool_eeprom *eeprom, u8 *data)
-{
-        struct rtl8139_private *np = netdev_priv(dev);
-        unsigned int addr_len;
-        u16 val;
-        u32 offset = eeprom->offset >> 1;
-        u32 len = eeprom->len;
-        u32 i = 0;
-
-        if (eeprom->magic != RTL8139_EEPROM_MAGIC)
-	{
-		printk("Invalid magic. Got 0x%x, expected 0x%x\n", eeprom->magic, RTL8139_EEPROM_MAGIC);
-                return -EINVAL;
-	}
-
-        spin_lock_irq(&np->lock);
-
-        addr_len = read_eeprom(np->mmio_addr, 0, 8) == 0x8129 ? 8 : 6;
-
-	enable_write_eeprom(np->mmio_addr, 1, addr_len);
-
-        if (eeprom->offset & 1) {
-                val = read_eeprom(np->mmio_addr, offset, addr_len) & 0xff;
-                val |= (u16)data[i++] << 8;
-                write_eeprom(np->mmio_addr, offset, val, addr_len);
-                offset++;
-        }
-
-        while (i < len - 1) {
-                val = (u16)data[i++];
-                val |= (u16)data[i++] << 8;
-                write_eeprom(np->mmio_addr, offset, val, addr_len);
-                offset++;
-        }
-
-        if (i < len) {
-                val = read_eeprom(np->mmio_addr, offset, addr_len) & 0xff00;
-                val |= (u16)data[i];
-                write_eeprom(np->mmio_addr, offset, val, addr_len);
-        }
-
-	enable_write_eeprom(np->mmio_addr, 0, addr_len);
-
-        spin_unlock_irq(&np->lock);
-        return 0;
-}
-
-
 static const struct ethtool_ops rtl8139_ethtool_ops = {
 	.get_drvinfo		= rtl8139_get_drvinfo,
 	.get_settings		= rtl8139_get_settings,
@@ -2707,9 +2511,6 @@ static const struct ethtool_ops rtl8139_ethtool_ops = {
 	.get_strings		= rtl8139_get_strings,
 	.get_sset_count		= rtl8139_get_sset_count,
 	.get_ethtool_stats	= rtl8139_get_ethtool_stats,
-	.get_eeprom_len		= rtl8139_get_eeprom_len,
-	.get_eeprom		= rtl8139_get_eeprom,
-	.set_eeprom		= rtl8139_set_eeprom,
 };
 
 static int netdev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)

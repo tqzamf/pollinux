@@ -3346,7 +3346,6 @@ hub_port_init (struct usb_hub *hub, struct usb_device *udev, int port1,
 	}
 
 	retval = 0;
-
 	/* notify HCD that we have a device connected and addressed */
 	if (hcd->driver->update_device)
 		hcd->driver->update_device(hcd, udev);
@@ -3906,10 +3905,9 @@ static void hub_events(void)
 				}
 			}
 
-			if (connect_change) {
+			if (connect_change)
 				hub_port_connect_change(hub, i,
 						portstatus, portchange);
-			}
 		} /* end for i */
 
 		/* deal with hub status changes */

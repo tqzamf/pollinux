@@ -485,11 +485,9 @@ static int __devinit vfb_probe(struct platform_device *dev)
 
 	/*
 	 * For real video cards we use ioremap.
-	 * DJL 24112006: Allows mmap to work.
 	 */
-	if (!(videomemory = (void *) __get_free_pages(GFP_KERNEL, get_order(videomemorysize))))
+	if (!(videomemory = rvmalloc(videomemorysize)))
 		return retval;
-
 
 	/*
 	 * VFB must clear memory to prevent kernel info
@@ -517,8 +515,6 @@ static int __devinit vfb_probe(struct platform_device *dev)
 	info->pseudo_palette = info->par;
 	info->par = NULL;
 	info->flags = FBINFO_FLAG_DEFAULT;
-  info->fix.smem_len = videomemorysize;
-  info->fix.smem_start = virt_to_phys(videomemory) & PAGE_MASK;
 
 	retval = fb_alloc_cmap(&info->cmap, 256, 0);
 	if (retval < 0)

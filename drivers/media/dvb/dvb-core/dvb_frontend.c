@@ -296,7 +296,6 @@ static void dvb_frontend_init(struct dvb_frontend *fe)
 		if (fe->ops.i2c_gate_ctrl)
 			fe->ops.i2c_gate_ctrl(fe, 0);
 	}
-	printk("dvb_frontend_init END!!!\n");
 }
 
 void dvb_frontend_reinitialise(struct dvb_frontend *fe)
@@ -621,7 +620,6 @@ static int dvb_frontend_thread(void *data)
 	while (1) {
 		up(&fepriv->sem);	    /* is locked when we enter the thread... */
 restart:
-		printk("DVB Frontend: Jumped to :restart\n");
 		wait_event_interruptible_timeout(fepriv->wait_queue,
 			dvb_frontend_should_wakeup(fe) || kthread_should_stop()
 				|| freezing(current),
@@ -1977,7 +1975,7 @@ static int dvb_frontend_ioctl_legacy(struct file *file,
 	struct dvb_frontend_private *fepriv = fe->frontend_priv;
 	struct dtv_frontend_properties *c = &fe->dtv_property_cache;
 	int cb_err, err = -EOPNOTSUPP;
-	printk("dvb_frontend_ioctl_legacy\n");
+
 	if (fe->dvb->fe_ioctl_override) {
 		cb_err = fe->dvb->fe_ioctl_override(fe, cmd, parg,
 						    DVB_FE_IOCTL_PRE);
@@ -1992,11 +1990,9 @@ static int dvb_frontend_ioctl_legacy(struct file *file,
 	switch (cmd) {
 	case FE_GET_INFO: {
 		struct dvb_frontend_info* info = parg;
-		printk("FE_GET_INFO CALLED!!\n");
+
 		memcpy(info, &fe->ops.info, sizeof(struct dvb_frontend_info));
-		printk("FE_GET_INFO 2!!\n");
 		dvb_frontend_get_frequency_limits(fe, &info->frequency_min, &info->frequency_max);
-		printk("FE_GET_INFO 3!!\n");
 
 		/*
 		 * Associate the 4 delivery systems supported by DVBv3
@@ -2028,7 +2024,6 @@ static int dvb_frontend_ioctl_legacy(struct file *file,
 			       __func__, c->delivery_system);
 			fe->ops.info.type = FE_OFDM;
 		}
-		printk("FE_GET_INFO 4!!\n");
 		dprintk("current delivery system on cache: %d, V3 type: %d\n",
 			c->delivery_system, fe->ops.info.type);
 

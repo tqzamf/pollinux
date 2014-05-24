@@ -22,14 +22,8 @@
 #ifndef __PNX8550_GLB_H
 #define __PNX8550_GLB_H
 
-/** MMIO base address, mapped into uncached virtual memory. */
-extern void *phStbMmio_Base;
-
 #define PNX8550_MMIO_BASE_ADDR 0x1BE00000
 #define PNX8550_MMIO_SIZE        (2UL * 1024UL * 1024UL)
-
-/** Access the value of a MMIO register. */
-#define MMIO(offset) (*((volatile unsigned long*)(((unsigned long)phStbMmio_Base) + (offset)) ))
 
 #define PNX8550_GLB1_BASE	0xBBE63000
 #define PNX8550_GLB2_BASE	0xBBE4d000

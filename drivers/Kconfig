@@ -88,8 +88,6 @@ source "drivers/hid/Kconfig"
 
 source "drivers/usb/Kconfig"
 
-source "drivers/nxp/Kconfig"
-
 source "drivers/uwb/Kconfig"
 
 source "drivers/mmc/Kconfig"

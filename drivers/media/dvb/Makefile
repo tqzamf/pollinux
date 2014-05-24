@@ -16,7 +16,6 @@ obj-y        := dvb-core/	\
 		pt1/		\
 		mantis/		\
 		ngene/		\
-		ddbridge/ \
-		nxp/
+		ddbridge/
 
 obj-$(CONFIG_DVB_FIREDTV)	+= firewire/

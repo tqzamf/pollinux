@@ -590,11 +590,4 @@ config INPUT_XEN_KBDDEV_FRONTEND
 	  To compile this driver as a module, choose M here: the
 	  module will be called xen-kbdfront.
 
-config INPUT_ROKU_PANDORA2
-	tristate "Roku Pandora2 I/O driver"
-	depends on MIPS
-	depends on PNX8550
-	help
-	  Say Y here only if you are building for a Roku Pandora2 device.
-
 endif
