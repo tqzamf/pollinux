@@ -16,14 +16,14 @@
 #include <gpio.h>
 
 const char *pnx8550_gpio_names[] = {
-	"bootscript0","bootscript1","bootscript2",NULL,NULL,      NULL,NULL,NULL, /* 0~7 */
-	NULL,         NULL,         NULL,         NULL,"standby", NULL,NULL,NULL, /* 8~15 */
-	"reserved1",  "reserved2",  NULL,         NULL,NULL,      NULL,NULL,NULL, /* 16~23 */
-	NULL,         NULL,         NULL,         NULL,NULL,      NULL,NULL,NULL, /* 24~31 */
-	NULL,         NULL,         NULL,         NULL,NULL,      NULL,NULL,NULL, /* 32~39 */
-	NULL,         NULL,         NULL,         NULL,"cpuled",  NULL,NULL,NULL, /* 40~47 */
-	NULL,         NULL,         NULL,         NULL,"bootmode",NULL,NULL,NULL, /* 48~55 */
-	NULL,         NULL,         NULL,         NULL,NULL,      NULL,NULL,NULL, /* 56~63 */
+	"bootscript0","bootscript1","bootscript2",NULL,NULL,       NULL,NULL,NULL, /* 0~7 */
+	NULL,         NULL,         NULL,         NULL,"standby",  NULL,NULL,NULL, /* 8~15 */
+	"reserved1",  "reserved2",  NULL,         NULL,NULL,       NULL,NULL,NULL, /* 16~23 */
+	NULL,         NULL,         NULL,         NULL,NULL,       NULL,NULL,NULL, /* 24~31 */
+	NULL,         NULL,         NULL,         NULL,NULL,       NULL,NULL,NULL, /* 32~39 */
+	NULL,         NULL,         NULL,         NULL,"cpu-blue", NULL,NULL,NULL, /* 40~47 */
+	NULL,         NULL,         NULL,         NULL,"bootmode", NULL,NULL,NULL, /* 48~55 */
+	"cpu-red",    NULL,         NULL,         NULL,"cpu-green",NULL,NULL,NULL, /* 56~63 */
 };
 
 #define IN 1
@@ -31,14 +31,14 @@ const char *pnx8550_gpio_names[] = {
 #define INOUT 3
 #define SYS 0
 const char pnx8550_gpio_config[] = {
-	IN,   IN,   IN,   INOUT,INOUT,INOUT,INOUT,INOUT, /* 0~7 */
+	IN,   IN,   IN,   IN,   INOUT,INOUT,INOUT,INOUT, /* 0~7 */
 	INOUT,INOUT,INOUT,INOUT,SYS,  INOUT,INOUT,INOUT, /* 8~15 */
 	IN,   IN,   INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 16~23 */
 	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 24~31 */
 	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 32~39 */
 	INOUT,INOUT,INOUT,INOUT,OUT,  INOUT,INOUT,INOUT, /* 40~47 */
 	INOUT,INOUT,INOUT,INOUT,IN,   INOUT,INOUT,INOUT, /* 48~55 */
-	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 56~63 */
+	OUT,  INOUT,INOUT,INOUT,OUT,  INOUT,INOUT,INOUT, /* 56~63 */
 };
 
 static void pnx8550_gpio_set(struct gpio_chip *chip,
@@ -107,22 +107,34 @@ static struct gpio_chip pnx8550_gpio_chip = {
 	.names            = pnx8550_gpio_names,
 };
 
-static struct gpio_led heartbeat_led = {
-	.name		= "heartbeat",
-	.active_low	= 1,
-	.default_trigger	= "heartbeat",
-	.gpio		= PNX8550_GPIO_CPULED,
+static struct gpio_led leds[] = {
+	{
+		.name		= "heartbeat",
+		.active_low	= 1,
+		.default_trigger	= "heartbeat",
+		.gpio		= PNX8550_GPIO_CPU_BLUE,
+	}, {
+		.name		= "wlan-assoc",
+		.active_low	= 1,
+		.default_trigger	= "phy0assoc",
+		.gpio		= PNX8550_GPIO_CPU_GREEN,
+	}, {
+		.name		= "wlan-tx",
+		.active_low	= 1,
+		.default_trigger	= "phy0tx",
+		.gpio		= PNX8550_GPIO_CPU_RED,
+	}
 };
 
-static struct gpio_led_platform_data heartbeat_led_data = {
-	.num_leds	= 1,
-	.leds		= &heartbeat_led,
+static struct gpio_led_platform_data led_data = {
+	.num_leds	= ARRAY_SIZE(leds),
+	.leds		= leds,
 };
 
-static struct platform_device heartbeat_led_device = {
+static struct platform_device led_device = {
 	.name		= "leds-gpio",
 	.id			= -1,
-	.dev.platform_data	= &heartbeat_led_data,
+	.dev.platform_data	= &led_data,
 };
 
 int __init pnx8550_gpio_init(void)
@@ -135,12 +147,15 @@ int __init pnx8550_gpio_init(void)
 	for (pin = 0; pin < PNX8550_GPIO_COUNT; pin++)
 		if (pnx8550_gpio_config[pin] == IN)
 			PNX8550_GPIO_DATA(pin) = PNX8550_GPIO_SET_IN(pin);
+	// switch of the red CPU led to signal that linux has booted
+	PNX8550_GPIO_DATA(PNX8550_GPIO_CPU_RED) = PNX8550_GPIO_SET_LOW(PNX8550_GPIO_CPU_RED);
 	
 	res = gpiochip_add(&pnx8550_gpio_chip);
 	if (res == 0) {
-		// try to register CPU heartbeat
-		heartbeat_led.gpio += pnx8550_gpio_chip.base;
-		platform_device_register(&heartbeat_led_device);
+		// try to register LED triggers
+		for (pin = 0; pin < ARRAY_SIZE(leds); pin++)
+			leds[pin].gpio += pnx8550_gpio_chip.base;
+		platform_device_register(&led_device);
 	}
 	return res;
 }
