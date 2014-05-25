@@ -127,11 +127,20 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	return 0;
 }
 
+extern void pnx8550fb_shutdown_display(void);
+extern void pnx8550fb_setup_display(int pal);
+
+static void pnx8550_framebuffer_shutdown(struct platform_device *dev)
+{
+	pnx8550fb_shutdown_display();
+}
+
 static int pnx8550_framebuffer_remove(struct platform_device *dev)
 {
 	struct fb_info *info = platform_get_drvdata(dev);
 
 	if (info) {
+		pnx8550_framebuffer_shutdown(dev);
 		unregister_framebuffer(info);
 		framebuffer_release(info);
 	}
@@ -139,16 +148,15 @@ static int pnx8550_framebuffer_remove(struct platform_device *dev)
 }
 
 static struct platform_driver pnx8550_framebuffer_driver = {
-        .probe  = pnx8550_framebuffer_probe,
-        .remove = pnx8550_framebuffer_remove,
-        .driver = {
-                .name   = "pnx8550fb",
+        .probe    = pnx8550_framebuffer_probe,
+        .remove   = pnx8550_framebuffer_remove,
+        .shutdown = pnx8550_framebuffer_shutdown,
+        .driver   = {
+            .name = "pnx8550fb",
         },
 };
 
 static struct platform_device *pnx8550_framebuffer_device;
-
-extern void pnx8550fb_setup_display(int pal);
 
 static int __init pnx8550_framebuffer_init(void)
 {

@@ -137,7 +137,7 @@ static const unsigned char pnx8550fb_anabel_ntsc[] =
     0x6e,0x00
 };
 
-/* Register / Data information used to initialise SCART switch */
+/* Register / Data information used to initialise SCART switch. */
 static const unsigned char pnx8550fb_scart_data[] = {
     0x00, // address byte: start with first register
     0x70, // STBY, MUTE, DAPD=normal operation, manual startup, audio 24-bit I²S without de-emphasis
@@ -152,6 +152,15 @@ static const unsigned char pnx8550fb_scart_data[] = {
     0x9E, // video detection masked, interrupts disabled (because nothing expects them)
 };
 
+/* Register / Data information used to place the SCART switch in auto-standby. These are simply the
+ * power-up defaults according to the datasheet. */
+static const unsigned char pnx8550fb_scart_standby[] = {
+    0x00, // address byte: start with first register
+    0x7b, // STBY, MUTE enabled, DAPD=normal operation, auto startup, audio 24-bit I²S without de-emphasis
+    // the rest is unnecessary but let's restore defaults anyway
+    0xd5,0x1f,0x27,0x9c,0x00,0x04,0x00,0x00,0x9E,
+};
+
 static struct i2c_msg pnx8550fb_scart_msg = {
 	.addr = I2C_SCART_ADDR,
 	.flags = 0,
@@ -159,11 +168,26 @@ static struct i2c_msg pnx8550fb_scart_msg = {
 	.buf = (unsigned char *) pnx8550fb_scart_data,
 };
 
+static struct i2c_msg pnx8550fb_shutdown_msg = {
+	.addr = I2C_SCART_ADDR,
+	.flags = 0,
+	.len = sizeof(pnx8550fb_scart_standby),
+	.buf = (unsigned char *) pnx8550fb_scart_standby,
+};
+
 /* Function used to set up Scart switch */
 static void pnx8550fb_setup_scart(void)
 {
 	struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP0105_BUS1);
 	if ((i2c_transfer(adapter, &pnx8550fb_scart_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error\n", __func__);
+}
+
+/* Function used to switch the Scart switch back to power-up defaults */
+static void pnx8550fb_shutdown_scart(void)
+{
+	struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP0105_BUS1);
+	if ((i2c_transfer(adapter, &pnx8550fb_shutdown_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error\n", __func__);
 }
 
@@ -264,7 +288,7 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     outl(0x1, PCI_BASE | 0x10e240);
 }
 
-/* Function used to initialise the splash screen */
+/* Function used to initialise the screen. */
 void pnx8550fb_setup_display(int pal)
 {
     /* Set up the QVCP registers */
@@ -273,6 +297,13 @@ void pnx8550fb_setup_display(int pal)
     /* Set up Anabel using I2C */
     pnx8550fb_setup_anabel(pal);
 
-    /* Set up the Scart switch (if present) */
+    /* Set up the Scart switch */
     pnx8550fb_setup_scart();
+}
+
+/* Function used to shutdown the video system. */
+void pnx8550fb_shutdown_display(void)
+{
+    /* Shut down the Scart switch */
+    pnx8550fb_shutdown_scart();
 }
