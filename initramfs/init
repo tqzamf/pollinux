@@ -36,6 +36,7 @@ fi
 # try and fix it.
 while ! [ -x "/root/sbin/init" ]; do
 	echo "/sbin/init not found on /root. starting rescue shell."
+	echo resc >/sys/devices/platform/frontpanel/ascii
 	setsid cttyhack ash
 done
 # init appears to be usable. try switching to it. if this fails, that's

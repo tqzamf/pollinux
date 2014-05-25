@@ -16,14 +16,14 @@
 #include <gpio.h>
 
 const char *pnx8550_gpio_names[] = {
-	"bootscript0","bootscript1","bootscript2",NULL,NULL,       NULL,NULL,NULL, /* 0~7 */
-	NULL,         NULL,         NULL,         NULL,"standby",  NULL,NULL,NULL, /* 8~15 */
-	"reserved1",  "reserved2",  NULL,         NULL,NULL,       NULL,NULL,NULL, /* 16~23 */
-	NULL,         NULL,         NULL,         NULL,NULL,       NULL,NULL,NULL, /* 24~31 */
-	NULL,         NULL,         NULL,         NULL,NULL,       NULL,NULL,NULL, /* 32~39 */
-	NULL,         NULL,         NULL,         NULL,"cpu-blue", NULL,NULL,NULL, /* 40~47 */
-	NULL,         NULL,         NULL,         NULL,"bootmode", NULL,NULL,NULL, /* 48~55 */
-	"cpu-red",    NULL,         NULL,         NULL,"cpu-green",NULL,NULL,NULL, /* 56~63 */
+	"bootscript0","bootscript1","bootscript2",NULL,NULL,       NULL,   NULL,  NULL, /* 0~7 */
+	NULL,         NULL,         NULL,         NULL,"standby",  NULL,   NULL,  NULL, /* 8~15 */
+	"reserved1",  "reserved2",  NULL,         NULL,"fpdata",   "fpclk","fpcs",NULL, /* 16~23 */
+	NULL,         NULL,         NULL,         NULL,NULL,       NULL,   NULL,  NULL, /* 24~31 */
+	NULL,         NULL,         NULL,         NULL,NULL,       NULL,   NULL,  NULL, /* 32~39 */
+	NULL,         NULL,         NULL,         NULL,"cpu-blue", NULL,   NULL,  NULL, /* 40~47 */
+	NULL,         NULL,         NULL,         NULL,"bootmode", NULL,   NULL,  NULL, /* 48~55 */
+	"cpu-red",    NULL,         NULL,         NULL,"cpu-green",NULL,   NULL,  NULL, /* 56~63 */
 };
 
 #define IN 1
@@ -33,7 +33,7 @@ const char *pnx8550_gpio_names[] = {
 const char pnx8550_gpio_config[] = {
 	IN,   IN,   IN,   IN,   INOUT,INOUT,INOUT,INOUT, /* 0~7 */
 	INOUT,INOUT,INOUT,INOUT,SYS,  INOUT,INOUT,INOUT, /* 8~15 */
-	IN,   IN,   INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 16~23 */
+	IN,   IN,   INOUT,INOUT,OUT,  OUT,  OUT,  INOUT, /* 16~23 */
 	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 24~31 */
 	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 32~39 */
 	INOUT,INOUT,INOUT,INOUT,OUT,  INOUT,INOUT,INOUT, /* 40~47 */
@@ -137,17 +137,26 @@ static struct platform_device led_device = {
 	.dev.platform_data	= &led_data,
 };
 
+static int pnx8550_frontpanel_base = PNX8550_GPIO_PT6955_DATA;
+
+static struct platform_device frontpanel_device = {
+	.name		= "frontpanel",
+	.id			= -1,
+	.dev.platform_data	= &pnx8550_frontpanel_base,
+};
+
 int __init pnx8550_gpio_init(void)
 {
 	int res, pin;
 	
-	// force input-only pins to input in case they were misconfigured. doesn't go through
-	// GPIOLIB because we want that configuration right even if GPIOLOB fails to register
-	// the chip. GPIOLOB's default for pins is input anyway, so no need to tell it.
+	// force input-only pins to input in case they have been misconfigured. doesn't go
+	// through GPIOLIB because we want that configuration right even if GPIOLOB fails
+	// to register the chip. GPIOLOB's default for pins is input anyway, so no need to
+	// tell it.
 	for (pin = 0; pin < PNX8550_GPIO_COUNT; pin++)
 		if (pnx8550_gpio_config[pin] == IN)
 			PNX8550_GPIO_DATA(pin) = PNX8550_GPIO_SET_IN(pin);
-	// switch of the red CPU led to signal that linux has booted
+	// switch off the red CPU led to signal that linux has booted
 	PNX8550_GPIO_DATA(PNX8550_GPIO_CPU_RED) = PNX8550_GPIO_SET_LOW(PNX8550_GPIO_CPU_RED);
 	
 	res = gpiochip_add(&pnx8550_gpio_chip);
@@ -156,6 +165,9 @@ int __init pnx8550_gpio_init(void)
 		for (pin = 0; pin < ARRAY_SIZE(leds); pin++)
 			leds[pin].gpio += pnx8550_gpio_chip.base;
 		platform_device_register(&led_device);
+		// register frontpanel display
+		pnx8550_frontpanel_base += pnx8550_gpio_chip.base;
+		platform_device_register(&frontpanel_device);
 	}
 	return res;
 }
