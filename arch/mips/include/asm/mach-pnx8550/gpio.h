@@ -35,6 +35,9 @@
 #define PNX8550_GPIO_CPU_BLUE 44
 #define PNX8550_GPIO_CPU_RED 56
 #define PNX8550_GPIO_CPU_GREEN 60
+#define PNX8550_GPIO_PT6955_DATA 20
+#define PNX8550_GPIO_PT6955_CLOCK 21
+#define PNX8550_GPIO_PT6955_STROBE 22
 
 //this is the default configuration after boot, but why restore it?
 //#define PNX8550_GPIO_MODE_PORT0 0xffffffff
