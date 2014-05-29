@@ -40,14 +40,7 @@
 #include <pci.h>
 #include <uart.h>
 #include <nand.h>
-
-extern void __init board_setup(void);
-extern void pnx8550_machine_restart(char *);
-extern void pnx8550_machine_halt(void);
-extern void pnx8550_machine_power_off(void);
-extern struct resource ioport_resource;
-extern struct resource iomem_resource;
-extern char *prom_getcmdline(void);
+#include <prom.h>
 
 struct resource standard_io_resources[] = {
 	{

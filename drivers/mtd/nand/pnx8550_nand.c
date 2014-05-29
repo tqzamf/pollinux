@@ -48,6 +48,7 @@ Rev Date       Author      Comments
 #include <linux/interrupt.h>
 #include <asm/io.h>
 #include <asm/mach-pnx8550/nand.h>
+#include <asm/mach-pnx8550/prom.h>
 
 /******************************************************************************
 * LOCAL MACROS                                                                *
@@ -80,6 +81,8 @@ Rev Date       Author      Comments
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Adam Charrett/Neil Burningham");
 MODULE_DESCRIPTION(THIS_MODULE_DESCRIPTION);
+
+extern int mtdpart_setup(char *s);
 
 /******************************************************************************
 * STATIC FUNCTION PROTOTYPES                                                  *
@@ -894,6 +897,7 @@ static void pnx8550_nand_hwcontrol(struct mtd_info *mtd, int cmd, unsigned int c
 static int __init pnx8550_nand_init(void)
 {
     struct nand_chip *this;
+    char *mtdparts;
 
     printk(KERN_INFO "%s (%s-%s)\n", THIS_MODULE_DESCRIPTION, __DATE__, __TIME__);
 
@@ -950,20 +954,23 @@ static int __init pnx8550_nand_init(void)
     this->dev_ready   = pnx8550_nand_dev_ready;
     this->cmd_ctrl    = pnx8550_nand_hwcontrol;
     this->ecc.mode    = NAND_ECC_SOFT;
-
+    this->bbt_options = NAND_BBT_USE_FLASH;
+    this->bbt_td      = &nand_main_bbt_decr;
+    this->bbt_md      = &nand_mirror_bbt_decr;
 
     /* Scan to find existence of the device */
     if (nand_scan(&pnx8550_mtd, 1)) {
-        ERROR("Exiting No Devices");
+        ERROR("exiting: no device");
         return -ENXIO;
     }
-
-    this->options = NAND_BBT_USE_FLASH;
-    this->bbt_td  = &nand_main_bbt_decr;
-    this->bbt_md  = &nand_mirror_bbt_decr;
-
-	/* Allow partitioning from command line, else register the whole
+    
+	/* Allow partitioning from command line, else parse what the
+	 * bootloader passed in. If everything fails, register the whole
 	 * thing as a single partition. */
+    pnx8550_mtd.name = "nxp-0";
+    mtdparts = strchr(prom_mtdparts, '=');
+    if (mtdparts)
+		mtdpart_setup(mtdparts + 1);
 	mtd_device_parse_register(&pnx8550_mtd, NULL, NULL, NULL, 0);
 
     /* Return happy */
