@@ -49,6 +49,7 @@ Rev Date       Author      Comments
 #include <asm/io.h>
 #include <asm/mach-pnx8550/nand.h>
 #include <asm/mach-pnx8550/prom.h>
+#include "../mtdcore.h"
 
 /******************************************************************************
 * LOCAL MACROS                                                                *
@@ -83,6 +84,8 @@ MODULE_AUTHOR("Adam Charrett/Neil Burningham");
 MODULE_DESCRIPTION(THIS_MODULE_DESCRIPTION);
 
 extern int mtdpart_setup(char *s);
+#define MTDPART_UBOOT_END    0x0084000
+#define MTDPART_WINCE0_START 0x3c00000
 
 /******************************************************************************
 * STATIC FUNCTION PROTOTYPES                                                  *
@@ -898,6 +901,8 @@ static int __init pnx8550_nand_init(void)
 {
     struct nand_chip *this;
     char *mtdparts;
+    int err, i, safe_parts = 0;
+    struct mtd_partition *real_parts;
 
     printk(KERN_INFO "%s (%s-%s)\n", THIS_MODULE_DESCRIPTION, __DATE__, __TIME__);
 
@@ -971,7 +976,24 @@ static int __init pnx8550_nand_init(void)
     mtdparts = strchr(prom_mtdparts, '=');
     if (mtdparts)
 		mtdpart_setup(mtdparts + 1);
-	mtd_device_parse_register(&pnx8550_mtd, NULL, NULL, NULL, 0);
+	err = parse_mtd_partitions(&pnx8550_mtd, NULL, &real_parts, NULL);
+	if (err > 0) {
+		for (i = 0; i < err; i++)
+			if (real_parts[i].offset >= MTDPART_UBOOT_END 
+					&& real_parts[i].offset < MTDPART_WINCE0_START) {
+				// these partitions use WinCE ECC, which linux doesn't
+				// support. hide them to prevent error messages about
+				// uncorrectable ECC errors.
+				real_parts[safe_parts] = real_parts[i];
+				safe_parts++;
+			}
+		err = add_mtd_partitions(&pnx8550_mtd, real_parts, safe_parts);
+		kfree(real_parts);
+	} else if (err == 0) {
+		err = add_mtd_device(&pnx8550_mtd);
+		if (err == 1)
+			return -ENODEV;
+	}
 
     /* Return happy */
     return 0;
