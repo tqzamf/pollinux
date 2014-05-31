@@ -295,7 +295,7 @@ static ssize_t dots_show(struct device *dev,
 static DEVICE_ATTR(dots, 0600, dots_show, dots_store);
 
 
-// driver shutdown. clears the display and formally releases the GPIOs
+// driver shutdown. clears the display
 static void pnx8550_frontpanel_shutdown(struct platform_device *pdev)
 {
 	// clear display at shutdown. this might be a reboot, so the chip need
@@ -338,7 +338,7 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 	res += device_create_file(&pdev->dev, &dev_attr_brightness);
 	res += device_create_file(&pdev->dev, &dev_attr_dots);
 	if (res) {
-		printk(KERN_ERR "PNX8550 frontpanel failed to register sysfs files");
+		printk(KERN_ERR "PNX8550 frontpanel failed to register sysfs files\n");
 		pnx8550_frontpanel_remove(pdev);
 		return 1;
 	}

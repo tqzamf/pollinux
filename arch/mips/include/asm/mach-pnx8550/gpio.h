@@ -39,7 +39,7 @@
 #define PNX8550_GPIO_PT6955_CLOCK 21
 #define PNX8550_GPIO_PT6955_STROBE 22
 #define PNX8550_GPIO_SC1_AUX1 46
-#define PNX8550_GPIO_SC2_AUX2 47
+#define PNX8550_GPIO_SC1_AUX2 47
 
 //this is the default configuration after boot, but why restore it?
 //#define PNX8550_GPIO_MODE_PORT0 0xffffffff

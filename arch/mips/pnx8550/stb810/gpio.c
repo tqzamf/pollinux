@@ -25,7 +25,7 @@
 // 46~47: Smartcard 1 AUX1~2. GPIO, but used by smartcard stuff.
 // 52: SW1.1 boot mode selection, driven externally.
 // 56, 60: red & green CPU LED.
-const char *pnx8550_gpio_names[] = {
+static const char *pnx8550_gpio_names[] = {
 	"boot0", "boot1","boot2",NULL, NULL,      NULL,   NULL,    NULL,    /* 0~7 */
 	 NULL,    NULL,   NULL,  NULL,"standby",  NULL,   NULL,    NULL,    /* 8~15 */
 	"res1",  "res2",  NULL,  NULL,"fpdata",  "fpclk","fpstb",  NULL,    /* 16~23 */
@@ -40,7 +40,7 @@ const char *pnx8550_gpio_names[] = {
 #define OUT 2
 #define INOUT 3
 #define SYS 0
-const char pnx8550_gpio_config[] = {
+static const char pnx8550_gpio_config[] = {
 	IN,   IN,   IN,   IN,   INOUT,INOUT,INOUT,INOUT, /* 0~7 */
 	INOUT,INOUT,INOUT,INOUT,SYS,  INOUT,INOUT,INOUT, /* 8~15 */
 	IN,   IN,   INOUT,INOUT,OUT,  OUT,  OUT,  INOUT, /* 16~23 */
