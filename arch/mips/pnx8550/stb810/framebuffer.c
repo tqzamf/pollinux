@@ -27,6 +27,8 @@
 #include <linux/init.h>
 
 struct pnx8550fb_par {
+	void __iomem *base;
+	unsigned int size;
 	int xres;
 	int yres;
 	int left;
@@ -93,8 +95,12 @@ static void calc_offsets(int *res, int *left, int *right, int vres)
 {
 	int rem, rem_left;
 	
+	// clamp to physical resolution, and don't allow screens which are
+	// too small.
 	if (*res > vres)
 		*res = vres;
+	if (*res < vres / 2)
+		*res = vres / 2;
 	
 	// remaining number of pixels. ≥0 if pixels are left over; <0 if
 	// margins are too wide.
@@ -122,10 +128,7 @@ static int pnx8550fb_check_var(struct fb_var_screeninfo *var,
 {
 	struct pnx8550fb_par *par = info->par;
 
-	// only truecolor
-	//if (var->bits_per_pixel != 32)
-		//return -EINVAL;
-	
+	// (re)calculate appropriate margins
 	par->xres = var->xres;
 	par->left = var->left_margin - def.left_margin;
 	par->right = var->right_margin - def.right_margin;
@@ -136,8 +139,9 @@ static int pnx8550fb_check_var(struct fb_var_screeninfo *var,
 	par->lower = var->lower_margin - def.lower_margin;
 	calc_offsets(&par->yres, &par->upper, &par->lower, def.yres_virtual);
 	
-	// we only support the default, and maybe a bit of underscan
+	// we only support the default config, with slight modifications
 	*var = def;
+	// apply calculated sizes and margins
 	var->xres = par->xres;
 	var->yres = par->yres;
 	var->left_margin += par->left;
@@ -148,14 +152,14 @@ static int pnx8550fb_check_var(struct fb_var_screeninfo *var,
 	return 0;
 }
 
-static int pnx8550fb_set_par(struct fb_info *info)
+static int pnx8550fb_resize(struct fb_info *info, int init)
 {
 	struct pnx8550fb_par *par = info->par;
 	int start_offset, end_offset;
 	
 	// blank the screen. the client needs to redraw it anyway, but the
 	// borders will stay black.
-	memset(info->screen_base, 0, info->screen_size);
+	memset(par->base, 0, par->size);
 
 	// move the famebuffer's base address in memory so that the borders
 	// aren't painted over. the stride stays the same because each line
@@ -163,13 +167,26 @@ static int pnx8550fb_set_par(struct fb_info *info)
 	// pixels included in that.
 	start_offset = fix.line_length * par->upper + sizeof(int) * par->left;
 	end_offset = fix.line_length * par->lower + sizeof(int) * par->right;
-	info->screen_base = (char __iomem *) (fix.smem_start + start_offset);
-	info->screen_size = fix.smem_len - start_offset - end_offset;
+	
+	// set base address to move the start of the screen
+	if (!init)
+		mutex_lock(&info->mm_lock);
+	info->screen_base = (char __iomem *) (par->base + start_offset);
+	info->screen_size = par->size - start_offset - end_offset;
+	info->fix.smem_start = (unsigned long) info->screen_base;
+	info->fix.smem_len = info->screen_size;
+	if (!init)
+		mutex_unlock(&info->mm_lock);
 	printk(KERN_DEBUG "pnx8550fb using %dx%d screen @%08x offset %d\n",
 			par->xres, par->yres, (unsigned int) info->screen_base,
 			start_offset);
 
 	return 0;
+}
+
+static int pnx8550fb_set_par(struct fb_info *info)
+{
+	return pnx8550fb_resize(info, 0);
 }
 
 static struct fb_ops ops = {
@@ -184,46 +201,50 @@ static struct fb_ops ops = {
 	.fb_imageblit	= sys_imageblit,
 };
 
+extern void pnx8550fb_shutdown_display(void);
+extern void pnx8550fb_setup_display(int pal);
+
 static int pnx8550_framebuffer_probe(struct platform_device *dev)
 {
 	int retval = -ENOMEM;
+	struct pnx8550fb_par *par;
 	struct fb_info *info;
 	void __iomem *fb_ptr;
 
 	fb_ptr = ioremap(pnx8550_fb_base, PNX8550_FRAMEBUFFER_SIZE);
 	info = framebuffer_alloc(sizeof(struct pnx8550fb_par) + sizeof(u32) * 16, &dev->dev);
 	if (!info) {
-		printk(KERN_ERR
-				"pnx8550_stb810_fb alloc failed\n");
+		printk(KERN_ERR "pnx8550fb alloc failed\n");
 		return 1;
 	}
 
-	info->screen_base = (char __iomem *) fb_ptr;
-	info->screen_size = PNX8550_FRAMEBUFFER_SIZE;
 	info->fbops = &ops;
 	info->var = def;
-	fix.smem_start = (unsigned long) fb_ptr;
-	fix.smem_len = PNX8550_FRAMEBUFFER_SIZE;
 	info->fix = fix;     
 	info->pseudo_palette = info->par + sizeof(struct pnx8550fb_par);
 	info->flags = FBINFO_FLAG_DEFAULT;
 
+	// set initial screen size
+	par = info->par;
+	par->base = fb_ptr;
+	par->size = PNX8550_FRAMEBUFFER_SIZE;
+	pnx8550fb_check_var(&info->var, info);
+	pnx8550fb_resize(info, 1);
+
 	retval = register_framebuffer(info);
 	if (retval < 0) {
-		printk(KERN_ERR
-				"pnx8550_stb810_fb failed to register: %d\n", retval);
+		printk(KERN_ERR "pnx8550fb failed to register: %d\n", retval);
 		return 1;
 	}
-	printk(KERN_INFO
-			"fb%d: PNX8550-STB810 %s framebuffer at 0x%08x\n",
+
+	// only enable display once the driver is already registered
+	pnx8550fb_setup_display(def.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL);
+	printk(KERN_INFO "fb%d: PNX8550-STB810 %s framebuffer at 0x%08x\n",
 			info->node,
-			info->var.yres == PNX8550_FRAMEBUFFER_HEIGHT_PAL ? "PAL" : "NTSC",
+			info->var.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL ? "PAL" : "NTSC",
 			(unsigned int) info->screen_base);
 	return 0;
 }
-
-extern void pnx8550fb_shutdown_display(void);
-extern void pnx8550fb_setup_display(int pal);
 
 static void pnx8550_framebuffer_shutdown(struct platform_device *dev)
 {
@@ -255,23 +276,36 @@ static struct platform_device *pnx8550_framebuffer_device;
 
 static int __init pnx8550_framebuffer_init(void)
 {
-	int ret = 0;
-	char *option = NULL;
-	int pal = 1; /* default is PAL */
+	int ret;
+	unsigned long res;
+	char *option = NULL, *rest;
 
 	if (fb_get_options("pnx8550fb", &option))
 		return -ENODEV;
 	
 	if (option) {
-		if (!strcasecmp(option, "ntsc")) {
-			pal = 0;
+		// format: [pal|ntsc][WIDTH][xHEIGHT]
+		if (!strncasecmp(option, "ntsc", 4)) {
 			def.yres_virtual = def.yres = PNX8550_FRAMEBUFFER_HEIGHT_NTSC;
-		} else if (!strcasecmp(option, "pal")) {
-			pal = 1;
+			option += 4;
+		} else if (!strncasecmp(option, "pal", 3)) {
 			def.yres_virtual = def.yres = PNX8550_FRAMEBUFFER_HEIGHT_PAL;
+			option += 3;
 		}
+
+		rest = strchr(option, 'x');
+		if (!rest)
+			rest = strchr(option, 'X');
+		if (rest) {
+			*rest = 0;
+			rest++;
+			if (!kstrtol(rest, 10, &res))
+				def.yres = res;
+			*rest = 'x';
+		}
+		if (!kstrtol(option, 10, &res))
+			def.xres = res;
 	}
-	pnx8550fb_setup_display(pal);
 	
 	ret = platform_driver_register(&pnx8550_framebuffer_driver);
 
