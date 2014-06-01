@@ -26,6 +26,15 @@
 #include <linux/fb.h>
 #include <linux/init.h>
 
+struct pnx8550fb_par {
+	int xres;
+	int yres;
+	int left;
+	int right;
+	int upper;
+	int lower;
+};
+
 static struct fb_fix_screeninfo fix = {
 	.id =          "PNX8550-STB810",
 	.type =        FB_TYPE_PACKED_PIXELS,
@@ -34,7 +43,7 @@ static struct fb_fix_screeninfo fix = {
 	.line_length = PNX8550_FRAMEBUFFER_LINE_SIZE,
 };
 
-static struct fb_var_screeninfo var = {
+static struct fb_var_screeninfo def = {
 	.xres =           PNX8550_FRAMEBUFFER_WIDTH,
 	.yres =           PNX8550_FRAMEBUFFER_HEIGHT_PAL,
 	.xres_virtual =   PNX8550_FRAMEBUFFER_WIDTH,
@@ -46,6 +55,8 @@ static struct fb_var_screeninfo var = {
 	.activate =       FB_ACTIVATE_NOW,
 	.height =         -1,
 	.width =          -1,
+	// this is only correct for PAL, but should be enough to make fbset happy
+	// even for NTSC
 	.pixclock =       74074,
 	.left_margin =    63,
 	.right_margin =   18,
@@ -78,9 +89,94 @@ static int pnx8550_framebuffer_blank(int blank, struct fb_info *info)
 	return 0;
 }
 
+static void calc_offsets(int *res, int *left, int *right, int vres)
+{
+	int rem, rem_left;
+	
+	if (*res > vres)
+		*res = vres;
+	
+	// remaining number of pixels. ≥0 if pixels are left over; <0 if
+	// margins are too wide.
+	rem = vres - *res - *left - *right;
+	
+	// add half the remaining pixels to left, and the rest to the right.
+	// if rem ≥ 0, this makes the margins larger, else smaller.
+	rem_left = rem / 2;
+	*left += rem_left;
+	*right += rem - rem_left;
+	
+	// if rem < 0, one of the margins may have become negative. if so,
+	// set it to zero and enlarge the opposite margin to compensate.
+	if (*left < 0) {
+		*right -= *left;
+		*left = 0;
+	} else if (*right < 0) {
+		*left -= *right;
+		*right = 0;
+	}
+}
+
+static int pnx8550fb_check_var(struct fb_var_screeninfo *var,
+			     struct fb_info *info)
+{
+	struct pnx8550fb_par *par = info->par;
+
+	// only truecolor
+	//if (var->bits_per_pixel != 32)
+		//return -EINVAL;
+	
+	par->xres = var->xres;
+	par->left = var->left_margin - def.left_margin;
+	par->right = var->right_margin - def.right_margin;
+	calc_offsets(&par->xres, &par->left, &par->right, def.xres_virtual);
+	
+	par->yres = var->yres;
+	par->upper = var->upper_margin - def.upper_margin;
+	par->lower = var->lower_margin - def.lower_margin;
+	calc_offsets(&par->yres, &par->upper, &par->lower, def.yres_virtual);
+	
+	// we only support the default, and maybe a bit of underscan
+	*var = def;
+	var->xres = par->xres;
+	var->yres = par->yres;
+	var->left_margin += par->left;
+	var->right_margin += par->right;
+	var->upper_margin += par->upper;
+	var->lower_margin += par->lower;
+
+	return 0;
+}
+
+static int pnx8550fb_set_par(struct fb_info *info)
+{
+	struct pnx8550fb_par *par = info->par;
+	int start_offset, end_offset;
+	
+	// blank the screen. the client needs to redraw it anyway, but the
+	// borders will stay black.
+	memset(info->screen_base, 0, info->screen_size);
+
+	// move the famebuffer's base address in memory so that the borders
+	// aren't painted over. the stride stays the same because each line
+	// is still as wide as it used to be, only now there are some unused
+	// pixels included in that.
+	start_offset = fix.line_length * par->upper + sizeof(int) * par->left;
+	end_offset = fix.line_length * par->lower + sizeof(int) * par->right;
+	info->screen_base = (char __iomem *) (fix.smem_start + start_offset);
+	info->screen_size = fix.smem_len - start_offset - end_offset;
+	printk(KERN_DEBUG "pnx8550fb using %dx%d screen @%08x offset %d\n",
+			par->xres, par->yres, (unsigned int) info->screen_base,
+			start_offset);
+
+	return 0;
+}
+
 static struct fb_ops ops = {
 	.fb_setcolreg	= pnx8550_framebuffer_setcolreg,
 	.fb_blank       = pnx8550_framebuffer_blank,
+	.fb_check_var   = pnx8550fb_check_var,
+	.fb_set_par     = pnx8550fb_set_par,
 	.fb_read        = fb_sys_read,
 	.fb_write       = fb_sys_write,
 	.fb_fillrect	= sys_fillrect,
@@ -95,7 +191,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	void __iomem *fb_ptr;
 
 	fb_ptr = ioremap(pnx8550_fb_base, PNX8550_FRAMEBUFFER_SIZE);
-	info = framebuffer_alloc(sizeof(u32) * 16, &dev->dev);
+	info = framebuffer_alloc(sizeof(struct pnx8550fb_par) + sizeof(u32) * 16, &dev->dev);
 	if (!info) {
 		printk(KERN_ERR
 				"pnx8550_stb810_fb alloc failed\n");
@@ -105,12 +201,11 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	info->screen_base = (char __iomem *) fb_ptr;
 	info->screen_size = PNX8550_FRAMEBUFFER_SIZE;
 	info->fbops = &ops;
-	info->var = var;
+	info->var = def;
 	fix.smem_start = (unsigned long) fb_ptr;
 	fix.smem_len = PNX8550_FRAMEBUFFER_SIZE;
 	info->fix = fix;     
-	info->pseudo_palette = info->par;
-	info->par = NULL;
+	info->pseudo_palette = info->par + sizeof(struct pnx8550fb_par);
 	info->flags = FBINFO_FLAG_DEFAULT;
 
 	retval = register_framebuffer(info);
@@ -170,10 +265,10 @@ static int __init pnx8550_framebuffer_init(void)
 	if (option) {
 		if (!strcasecmp(option, "ntsc")) {
 			pal = 0;
-			var.yres_virtual = var.yres = PNX8550_FRAMEBUFFER_HEIGHT_NTSC;
+			def.yres_virtual = def.yres = PNX8550_FRAMEBUFFER_HEIGHT_NTSC;
 		} else if (!strcasecmp(option, "pal")) {
 			pal = 1;
-			var.yres_virtual = var.yres = PNX8550_FRAMEBUFFER_HEIGHT_PAL;
+			def.yres_virtual = def.yres = PNX8550_FRAMEBUFFER_HEIGHT_PAL;
 		}
 	}
 	pnx8550fb_setup_display(pal);
