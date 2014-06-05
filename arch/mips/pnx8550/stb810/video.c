@@ -289,10 +289,10 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
 }
 
 /* Function used to initialise the screen. */
-void pnx8550fb_setup_display(int pal)
+void pnx8550fb_setup_display(unsigned int base, int pal)
 {
     /* Set up the QVCP registers */
-    pnx8550fb_setup_QVCP(pnx8550_fb_base, pal);
+    pnx8550fb_setup_QVCP(base, pal);
 
     /* Set up Anabel using I2C */
     pnx8550fb_setup_anabel(pal);
