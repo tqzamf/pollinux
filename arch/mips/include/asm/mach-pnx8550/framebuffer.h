@@ -8,7 +8,6 @@
 #ifndef __PNX8550_FRAMEBUFFER_H
 #define __PNX8550_FRAMEBUFFER_H
 
-extern unsigned int pnx8550_fb_base;
 extern void pnx8550fb_shutdown_display(void);
 extern void pnx8550fb_setup_display(unsigned int base, int pal);
 

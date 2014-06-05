@@ -206,10 +206,18 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	int retval = -ENOMEM;
 	struct pnx8550fb_par *par;
 	struct fb_info *info;
-	unsigned long fb_base = pnx8550_fb_base;
+	struct resource *fb_res;
+	unsigned long fb_base;
 	void __iomem *fb_ptr;
-
+	
+	fb_res = platform_get_resource(dev, IORESOURCE_MEM, 0);
+	if (!fb_res) {
+		printk(KERN_ERR "pnx8550fb cannot find framebuffer address\n");
+		return 1;
+	}
+	fb_base = fb_res->start;
 	fb_ptr = ioremap_cachable(fb_base, PNX8550_FRAMEBUFFER_SIZE);
+	
 	info = framebuffer_alloc(sizeof(struct pnx8550fb_par) + sizeof(u32) * 16, &dev->dev);
 	if (!info) {
 		printk(KERN_ERR "pnx8550fb alloc failed\n");
@@ -272,11 +280,8 @@ static struct platform_driver pnx8550_framebuffer_driver = {
         },
 };
 
-static struct platform_device *pnx8550_framebuffer_device;
-
 static int __init pnx8550_framebuffer_init(void)
 {
-	int ret;
 	unsigned long res;
 	char *option = NULL, *rest;
 
@@ -319,23 +324,7 @@ static int __init pnx8550_framebuffer_init(void)
 	if (!def.yres)
 		def.yres = def.yres_virtual - def.upper_margin - def.lower_margin;
 	
-	ret = platform_driver_register(&pnx8550_framebuffer_driver);
-
-	if (!ret) {
-		pnx8550_framebuffer_device = platform_device_alloc("pnx8550fb", 0);
-
-		if (pnx8550_framebuffer_device)
-			ret = platform_device_add(pnx8550_framebuffer_device);
-		else
-			ret = -ENOMEM;
-
-		if (ret) {
-			platform_device_put(pnx8550_framebuffer_device);
-			platform_driver_unregister(&pnx8550_framebuffer_driver);
-		}
-	}
-
-	return ret;
+	return platform_driver_register(&pnx8550_framebuffer_driver);
 }
 
 module_init(pnx8550_framebuffer_init);

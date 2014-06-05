@@ -26,18 +26,22 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <asm/mach-pnx8550/glb.h>
+#include <linux/platform_device.h>
 #include <trimedia.h>
 #include <framebuffer.h>
 #include <prom.h>
 
 int prom_argc;
 char **prom_argv, **prom_envp;
-unsigned int pnx8550_fb_base;
 
 const char *get_system_type(void)
 {
     return "Philips PNX8550/STB810";
 }
+
+static struct resource pnx8550fb_resources = {
+	.flags		= IORESOURCE_MEM,
+};
 
 /*
  * Prom init. We read our one and only communication with the firmware.
@@ -77,5 +81,24 @@ void __init prom_init(void)
     fb_base = mem_size - PNX8550_FRAMEBUFFER_SIZE;
     add_memory_region(0, fb_base, BOOT_MEM_RAM);
     add_memory_region(fb_base, PNX8550_FRAMEBUFFER_SIZE, BOOT_MEM_RESERVED);
-    pnx8550_fb_base = fb_base;
+    
+    // set resources for framebuffer device. this is the cleanest way of
+    // passing the base address to the driver.
+    pnx8550fb_resources.start = fb_base;
+    pnx8550fb_resources.end = fb_base + PNX8550_FRAMEBUFFER_SIZE - 1;
 }
+
+static struct platform_device pnx8550fb_device = {
+	.name          = "pnx8550fb",
+	.id            = -1,
+	.resource      = &pnx8550fb_resources,
+	.num_resources = 1,
+};
+
+static int __init pnx8550fb_init(void)
+{
+	// cannot be called by prom_init, so do that later on
+	return platform_device_register(&pnx8550fb_device);
+}
+
+arch_initcall(pnx8550fb_init);
