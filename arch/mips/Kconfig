@@ -1127,7 +1127,6 @@ config SOC_PNX8550
 	select FB_SYS_FILLRECT
 	select FB_SYS_COPYAREA
 	select FB_SYS_IMAGEBLIT
-	select FB_SYS_FOPS
 
 config SWAP_IO_SPACE
 	bool

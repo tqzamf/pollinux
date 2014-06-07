@@ -57,15 +57,16 @@ static struct fb_var_screeninfo def = {
 	.activate =       FB_ACTIVATE_NOW,
 	.height =         -1,
 	.width =          -1,
-	// this is nonsense for both PAL and NTSC, but provides for a
+	// these borders are nonsense for both PAL and NTSC, but provide a
 	// centered initial display
-	.pixclock =       74074,
 	.left_margin =    PNX8550_FRAMEBUFFER_MARGIN_LEFT,
 	.right_margin =   PNX8550_FRAMEBUFFER_MARGIN_RIGHT,
 	.upper_margin =   PNX8550_FRAMEBUFFER_MARGIN_UPPER_PAL,
 	.lower_margin =   PNX8550_FRAMEBUFFER_MARGIN_LOWER_PAL,
-	.hsync_len =      144,
-	.vsync_len =      49,
+	// at least make sure the timings are correct
+	.pixclock =       74074,
+	.hsync_len =      PNX8550_FRAMEBUFFER_HSYNC_PAL,
+	.vsync_len =      PNX8550_FRAMEBUFFER_VSYNC_PAL,
 	.sync =           FB_SYNC_BROADCAST,
 	.vmode =          FB_VMODE_INTERLACED,
 };
@@ -177,9 +178,9 @@ static int pnx8550fb_resize(struct fb_info *info, int init)
 	info->fix.smem_len = info->screen_size;
 	if (!init)
 		mutex_unlock(&info->mm_lock);
-	printk(KERN_DEBUG "pnx8550fb using %dx%d screen @%08x offset %d\n",
-			par->xres, par->yres, (unsigned int) info->screen_base,
-			start_offset);
+	printk(KERN_DEBUG "pnx8550fb using %dx%d screen @%08x / %08x offset %d\n",
+			par->xres, par->yres, (unsigned int) info->fix.smem_start,
+			(unsigned int) info->screen_base, start_offset);
 
 	return 0;
 }
@@ -194,8 +195,6 @@ static struct fb_ops ops = {
 	.fb_blank       = pnx8550_framebuffer_blank,
 	.fb_check_var   = pnx8550fb_check_var,
 	.fb_set_par     = pnx8550fb_set_par,
-	.fb_read        = fb_sys_read,
-	.fb_write       = fb_sys_write,
 	.fb_fillrect	= sys_fillrect,
 	.fb_copyarea	= sys_copyarea,
 	.fb_imageblit	= sys_imageblit,
@@ -226,7 +225,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 
 	info->fbops = &ops;
 	info->var = def;
-	info->fix = fix;     
+	info->fix = fix;
 	info->pseudo_palette = info->par + sizeof(struct pnx8550fb_par);
 	info->flags = FBINFO_FLAG_DEFAULT;
 
@@ -247,10 +246,10 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	// only enable display once the driver is already registered
 	pnx8550fb_setup_display(fb_base,
 			def.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL);
-	printk(KERN_INFO "fb%d: PNX8550-STB810 %s framebuffer at 0x%08x\n",
+	printk(KERN_INFO "fb%d: PNX8550-STB810 %s framebuffer at 0x%08x / %08x\n",
 			info->node,
 			info->var.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL ? "PAL" : "NTSC",
-			(unsigned int) info->screen_base);
+			(unsigned int) fb_base, (unsigned int) fb_ptr);
 	return 0;
 }
 
@@ -295,11 +294,15 @@ static int __init pnx8550_framebuffer_init(void)
 			def.yres_virtual = PNX8550_FRAMEBUFFER_HEIGHT_NTSC;
 			def.upper_margin = PNX8550_FRAMEBUFFER_MARGIN_UPPER_NTSC;
 			def.lower_margin = PNX8550_FRAMEBUFFER_MARGIN_LOWER_NTSC;
+			def.vsync_len = PNX8550_FRAMEBUFFER_VSYNC_NTSC;
+			def.hsync_len = PNX8550_FRAMEBUFFER_HSYNC_NTSC;
 			option += 4;
 		} else if (!strncasecmp(option, "pal", 3)) {
 			def.yres_virtual = PNX8550_FRAMEBUFFER_HEIGHT_PAL;
 			def.upper_margin = PNX8550_FRAMEBUFFER_MARGIN_UPPER_PAL;
 			def.lower_margin = PNX8550_FRAMEBUFFER_MARGIN_LOWER_PAL;
+			def.vsync_len = PNX8550_FRAMEBUFFER_VSYNC_PAL;
+			def.hsync_len = PNX8550_FRAMEBUFFER_HSYNC_PAL;
 			option += 3;
 		}
 
