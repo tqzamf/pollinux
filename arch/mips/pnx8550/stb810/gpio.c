@@ -15,28 +15,38 @@
 
 #include <gpio.h>
 
-const char *pnx8550_gpio_names[] = {
-	"bootscript0","bootscript1","bootscript2",NULL,NULL,       NULL,   NULL,  NULL, /* 0~7 */
-	NULL,         NULL,         NULL,         NULL,"standby",  NULL,   NULL,  NULL, /* 8~15 */
-	"reserved1",  "reserved2",  NULL,         NULL,"fpdata",   "fpclk","fpcs",NULL, /* 16~23 */
-	NULL,         NULL,         NULL,         NULL,NULL,       NULL,   NULL,  NULL, /* 24~31 */
-	NULL,         NULL,         NULL,         NULL,NULL,       NULL,   NULL,  NULL, /* 32~39 */
-	NULL,         NULL,         NULL,         NULL,"cpu-blue", NULL,   NULL,  NULL, /* 40~47 */
-	NULL,         NULL,         NULL,         NULL,"bootmode", NULL,   NULL,  NULL, /* 48~55 */
-	"cpu-red",    NULL,         NULL,         NULL,"cpu-green",NULL,   NULL,  NULL, /* 56~63 */
+// GPIO functions:
+// 0~2: used for bootscript select and pulled low externally.
+// 3: setting low causes IRQ55 oops, ie. kernel panic.
+// 12: standby. it's output, but userspace shouldn't mess with it.
+// 16~17: configured as primary function, not GPIO.
+// 20~22: PT6955 frontpanel control.
+// 44: blue CPU LED.
+// 46~47: Smartcard 1 AUX1~2. GPIO, but used by smartcard stuff.
+// 52: SW1.1 boot mode selection, driven externally.
+// 56, 60: red & green CPU LED.
+static const char *pnx8550_gpio_names[] = {
+	"boot0", "boot1","boot2",NULL, NULL,      NULL,   NULL,    NULL,    /* 0~7 */
+	 NULL,    NULL,   NULL,  NULL,"standby",  NULL,   NULL,    NULL,    /* 8~15 */
+	"res1",  "res2",  NULL,  NULL,"fpdata",  "fpclk","fpstb",  NULL,    /* 16~23 */
+	 NULL,    NULL,   NULL,  NULL, NULL,      NULL,   NULL,    NULL,    /* 24~31 */
+	 NULL,    NULL,   NULL,  NULL, NULL,      NULL,   NULL,    NULL,    /* 32~39 */
+	 NULL,    NULL,   NULL,  NULL,"cpu-blue", NULL,  "scaux1","scaux2", /* 40~47 */
+	 NULL,    NULL,   NULL,  NULL,"bootmode", NULL,   NULL,    NULL,    /* 48~55 */
+	"cpu-red",NULL,   NULL,  NULL,"cpu-green",NULL,   NULL,    NULL,    /* 56~63 */
 };
 
 #define IN 1
 #define OUT 2
 #define INOUT 3
 #define SYS 0
-const char pnx8550_gpio_config[] = {
+static const char pnx8550_gpio_config[] = {
 	IN,   IN,   IN,   IN,   INOUT,INOUT,INOUT,INOUT, /* 0~7 */
 	INOUT,INOUT,INOUT,INOUT,SYS,  INOUT,INOUT,INOUT, /* 8~15 */
 	IN,   IN,   INOUT,INOUT,OUT,  OUT,  OUT,  INOUT, /* 16~23 */
 	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 24~31 */
 	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 32~39 */
-	INOUT,INOUT,INOUT,INOUT,OUT,  INOUT,INOUT,INOUT, /* 40~47 */
+	INOUT,INOUT,INOUT,INOUT,OUT,  INOUT,SYS,  SYS,   /* 40~47 */
 	INOUT,INOUT,INOUT,INOUT,IN,   INOUT,INOUT,INOUT, /* 48~55 */
 	OUT,  INOUT,INOUT,INOUT,OUT,  INOUT,INOUT,INOUT, /* 56~63 */
 };
@@ -52,7 +62,8 @@ static void pnx8550_gpio_set(struct gpio_chip *chip,
 		return;
 	if (!(pnx8550_gpio_config[gpio] & OUT))
 		// board configuration doesn't like output to that pin. ignore.
-		// this avoids setting the STANDBY pin, which is output but system use only
+		// this also avoids setting the STANDBY pin, which is output
+		// but system use only.
 		return;
 
 	if (val)

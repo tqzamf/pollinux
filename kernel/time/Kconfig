@@ -10,7 +10,7 @@ config TICK_ONESHOT
 
 config NO_HZ
 	bool "Tickless System (Dynamic Ticks)"
-	depends on !ARCH_USES_GETTIMEOFFSET && GENERIC_CLOCKEVENTS
+	depends on !ARCH_USES_GETTIMEOFFSET && GENERIC_CLOCKEVENTS && !SOC_PNX8550
 	select TICK_ONESHOT
 	help
 	  This option enables a tickless system: timer interrupts will

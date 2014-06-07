@@ -42,13 +42,14 @@ Rev Date       Author      Comments
 #include <linux/string.h>
 #include <linux/types.h>
 #include <linux/mtd/mtd.h>
+#include <linux/mtd/partitions.h>
 #include <linux/mtd/nand.h>
 #include <linux/mtd/nand_ecc.h>
-#include <linux/mtd/compatmac.h>
 #include <linux/interrupt.h>
-#include <linux/mtd/partitions.h>
 #include <asm/io.h>
 #include <asm/mach-pnx8550/nand.h>
+#include <asm/mach-pnx8550/prom.h>
+#include "../mtdcore.h"
 
 /******************************************************************************
 * LOCAL MACROS                                                                *
@@ -60,35 +61,15 @@ Rev Date       Author      Comments
 #define ERROR(fmt, arg...) printk(KERN_ERR DEVNAME "(%s): " fmt "\n", __FUNCTION__,  ## arg )
 #define INFO(fmt, arg...)  printk(KERN_INFO DEVNAME ": " fmt "\n", ## arg )
 
-#undef DEBUG
-#define DEBUG( fmt, arg...)
-//#define DEBUG(fmt, arg...) printk(KERN_DEBUG DEVNAME "(%s): " fmt "\n", __FUNCTION__, ##  arg )
+#ifdef DEBUG
+#  undef DEBUG
+#  define DEBUG(fmt, arg...) printk(KERN_DEBUG DEVNAME "(%s): " fmt "\n", __FUNCTION__, ##  arg )
+#else
+#  define DEBUG( fmt, arg...)
+#endif
 
-#define UBTM_NAME                 "microBTM"
-#define UBTM_BLOCK_START         ( 0x00000000 )
-#define UBTM_SIZE                ( 0x00004000 ) /* 16K size, first block */
-
-#define BOOTLOADER_NAME           "bootloader"
-#define BOOTLOADER_BLOCK_START   ( UBTM_BLOCK_START + UBTM_SIZE )
-#define BOOTLOADER_SIZE          ( 0x3C000 ) /* 256K -  16K = 240K    */
-
-#define ROMFS_SYS_NAME            "ROMFS-Tools"
-#define ROMFS_SYS_BLOCK_START    ( BOOTLOADER_BLOCK_START + BOOTLOADER_SIZE )
-#define ROMFS_SYS_SIZE           ( 0x5C0000 ) /*   6M - 256K = 5.75M   */
-
-#define ROMFS_APP_NAME            "ROMFS-User"
-#define ROMFS_APP_BLOCK_START    ( ROMFS_SYS_BLOCK_START + ROMFS_SYS_SIZE )
-#define ROMFS_APP_SIZE           ( 0xA00000 ) /*  16M -   6M = 10M     */
-
-#define SETTINGS_NAME             "Settings"
-#define SETTINGS_BLOCK_START     ( ROMFS_APP_BLOCK_START + ROMFS_APP_SIZE )
-#define SETTINGS_SIZE            ( 0x80000 ) /* 512K */
-
-#define USER_NAME                 "User"
-#define USER_BLOCK_START         ( SETTINGS_BLOCK_START + SETTINGS_SIZE )
-#define USER_SIZE                ( 0x00F80000 ) /*  32M -  16M -512K = something */
-
-/* NB. USER_SIZE is just used as a default value, which gets overwritten after the device has been recognised during module_init */
+#define XIO_WAIT_TIMEOUT    200000    // 2s wait for xio ack (in 10 us)
+#define DMA_WAIT_TIMEOUT    3000000    // 30s wair for dma (in 10 us)
 
 #define NAND_ADDR(_col, _page) ((_col) & (mtd->writesize - 1)) + ((_page) << this->page_shift)
 
@@ -101,6 +82,10 @@ Rev Date       Author      Comments
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Adam Charrett/Neil Burningham");
 MODULE_DESCRIPTION(THIS_MODULE_DESCRIPTION);
+
+extern int mtdpart_setup(char *s);
+#define MTDPART_LOADER_END 0x0004000
+#define MTDPART_INFO_START 0x3ffc000
 
 /******************************************************************************
 * STATIC FUNCTION PROTOTYPES                                                  *
@@ -127,39 +112,6 @@ static void pnx8550_nand_transferDMA(void *from, void *to, int bytes, int toxio)
 /******************************************************************************
 * LOCAL DATA                                                                  *
 *******************************************************************************/
-
-/*
- * Define partitions for flash device
- */
-#define NUM_PARTITIONS 6
-#define USER_PARTITION 5
-static struct mtd_partition partition_info[NUM_PARTITIONS] =
-{
-    {
-     .name   = UBTM_NAME,
-     .offset = UBTM_BLOCK_START,
-     .size   = UBTM_SIZE},
-    {
-     .name   = BOOTLOADER_NAME,
-     .offset = BOOTLOADER_BLOCK_START,
-     .size   = BOOTLOADER_SIZE},
-    {
-     .name   = ROMFS_SYS_NAME,
-     .offset = ROMFS_SYS_BLOCK_START,
-     .size   = ROMFS_SYS_SIZE},
-    {
-     .name   = ROMFS_APP_NAME,
-     .offset = ROMFS_APP_BLOCK_START,
-     .size   = ROMFS_APP_SIZE},
-    {
-     .name   = SETTINGS_NAME,
-     .offset = SETTINGS_BLOCK_START,
-     .size   = SETTINGS_SIZE},
-    {
-     .name   = USER_NAME,
-     .offset = USER_BLOCK_START,
-     .size   = USER_SIZE}
-};
 
 /* Bad block descriptor for 16Bit nand flash */
 static uint8_t scan_ff_pattern[] = { 0xff, 0xff };
@@ -211,6 +163,32 @@ static int is64mb = 0;
 static struct mtd_info pnx8550_mtd;
 static struct nand_chip pnx8550_nand;
 
+/* bad block descriptor located in the "middle" of the flash
+ *  this is pretty evil, but since the end is used by the microBTM we don't
+ *  have a real choice here
+ */
+static u8 bbt_pattern[] = {'B', 'b', 't', '0' };
+static u8 mirror_pattern[] = {'1', 't', 'b', 'B' };
+
+static struct nand_bbt_descr nand_main_bbt_decr = {
+    .options = NAND_BBT_ABSPAGE | NAND_BBT_CREATE | NAND_BBT_WRITE |
+			NAND_BBT_2BIT | NAND_BBT_VERSION,
+	.pages[0] = 0x460,
+    .offs = 9,
+    .veroffs = 8,
+    .len = 4,
+    .pattern = bbt_pattern
+};
+
+static struct nand_bbt_descr nand_mirror_bbt_decr = {
+    .options = NAND_BBT_ABSPAGE | NAND_BBT_CREATE | NAND_BBT_WRITE |
+			NAND_BBT_2BIT | NAND_BBT_VERSION,
+	.pages[0] = 0x480,
+    .offs = 9,
+    .veroffs = 8,
+    .len = 4,
+    .pattern = mirror_pattern
+};
 
 /* Module Parameters */
 static int nand_auto = 1;
@@ -271,6 +249,7 @@ static void inline pnx8550_nand_alloc_transfer_buffer(void)
  */
 static void pnx8550_nand_transfer(void *from, void *to, int bytes, int toxio)
 {
+    u32 timeout = 0;
     u16 *from16 = (u16*)from;
     u16 *to16 = (u16*)to;
     int error = 0;
@@ -335,7 +314,17 @@ static void pnx8550_nand_transfer(void *from, void *to, int bytes, int toxio)
     {
         pnx8550_nand_transferDMA(from, to, bytes, toxio);
     }
-    while((PNX8550_GPXIO_INT_STATUS & PNX8550_XIO_INT_ACK) == 0);
+    while((PNX8550_GPXIO_INT_STATUS & PNX8550_XIO_INT_ACK) == 0)
+    {
+        udelay(10);
+        timeout++;
+        if(timeout > XIO_WAIT_TIMEOUT)
+        {
+            // we waited for too long on the Flash chip
+            ERROR("Timeout on XIO ACK wait!");
+            BUG();
+        }
+    }
 }
 
 /**
@@ -349,6 +338,7 @@ static void pnx8550_nand_transfer(void *from, void *to, int bytes, int toxio)
 static void pnx8550_nand_transferDMA(void *from, void *to, int bytes, int toxio)
 {
     int cmd = 0;
+    u32 timeout = 0;
     u32 internal;
     u32 external;
 
@@ -375,10 +365,18 @@ static void pnx8550_nand_transferDMA(void *from, void *to, int bytes, int toxio)
                              PNX8550_DMA_CTRL_INIT_DMA  |
                              cmd;
 
-    while((PNX8550_DMA_INT_STATUS & PNX8550_DMA_INT_COMPL) == 0);
-
+    while((PNX8550_DMA_INT_STATUS & PNX8550_DMA_INT_COMPL) == 0)
+    {
+        udelay(10);
+        timeout++;
+        if(timeout > DMA_WAIT_TIMEOUT)
+        {
+            // we waited for too long on the Flash chip
+            ERROR("Timeout on DMA complete wait!");
+            BUG();
+        }
+    }
     local_irq_enable();
-
 }
 
 /**
@@ -628,7 +626,7 @@ static void pnx8550_nand_read_buf(struct mtd_info *mtd, u_char * buf, int len)
     int pageLen;
     int oobLen = 0;
     u_char *transBuf = buf;
-    DEBUG("last_col_addr=%d last_page_addr=0x%x len=%d", last_col_addr, last_page_addr, len);
+    DEBUG("last_col_addr=%d last_page_addr=0x%x addr=0x%x len=%d", last_col_addr, last_page_addr, addr, len);
     /* some sanity checking, word access only please */
     if (len&1)
     {
@@ -863,8 +861,20 @@ static void pnx8550_nand_register_setup(u_char cmd_no,
  */
 static inline void pnx8550_nand_wait_for_dev_ready(void)
 {
+    u32 timeout = 0;
+
     DEBUG("");
-    while((PNX8550_XIO_CTRL & PNX8550_XIO_CTRL_XIO_ACK) == 0);
+    while((PNX8550_XIO_CTRL & PNX8550_XIO_CTRL_XIO_ACK) == 0)
+    {
+        udelay(10);
+        timeout++;
+        if(timeout > XIO_WAIT_TIMEOUT)
+        {
+            // we waited for too long on the Flash chip
+            ERROR("Timeout on XIO ACK wait!");
+            BUG();
+        }
+    }
 }
 
 /*
@@ -884,12 +894,39 @@ static void pnx8550_nand_hwcontrol(struct mtd_info *mtd, int cmd, unsigned int c
    // Nothing to do here, its all done by the XIO block
 }
 
+static int part_is_safe(struct mtd_partition *part) {
+	// FlashReader and its info-block at the end of flash. protected even
+	// if the name is changed, end even from partitions merely ovrlapping
+	// it.
+	if (part->offset <= MTDPART_LOADER_END)
+		return 0;
+	if (part->offset + part->size >= MTDPART_INFO_START)
+		return 0;
+	
+	// Windows CE partitions use Microsoft OOB layout. reading them from
+	// Linux causes ECC error messages. writing them from Linux makes them
+	// unbootable.
+	if (!strncasecmp(part->name, "WinCE", strlen("WinCE")))
+		return 0;
+	
+	// the bootloader. uses WinCE-style ECC, and definitely shouldn't be
+	// overwritten accidentially. 
+	if (!strcasecmp(part->name, "U-Boot"))
+		return 0;
+	
+	// all other partitions are fine
+	return 1;
+}
+
 /*
  * Main initialization routine
  */
 static int __init pnx8550_nand_init(void)
 {
     struct nand_chip *this;
+    char *mtdparts;
+    int err, i, safe_parts = 0;
+    struct mtd_partition *real_parts;
 
     printk(KERN_INFO "%s (%s-%s)\n", THIS_MODULE_DESCRIPTION, __DATE__, __TIME__);
 
@@ -946,19 +983,49 @@ static int __init pnx8550_nand_init(void)
     this->dev_ready   = pnx8550_nand_dev_ready;
     this->cmd_ctrl    = pnx8550_nand_hwcontrol;
     this->ecc.mode    = NAND_ECC_SOFT;
-
+    this->bbt_options = NAND_BBT_USE_FLASH;
+    this->bbt_td      = &nand_main_bbt_decr;
+    this->bbt_md      = &nand_mirror_bbt_decr;
 
     /* Scan to find existence of the device */
     if (nand_scan(&pnx8550_mtd, 1)) {
-        ERROR("Exiting No Devices");
+        ERROR("exiting: no device");
         return -ENXIO;
     }
-
-    /* Overwrite initial User partition size based on the device size */
-    partition_info[USER_PARTITION].size = (pnx8550_mtd.size - USER_BLOCK_START);
-
-    /* Register the partitions */
-    add_mtd_partitions(&pnx8550_mtd, partition_info, NUM_PARTITIONS);
+    
+	/* Allow partitioning from command line, else parse what the
+	 * bootloader passed in. If everything fails, register the whole
+	 * thing as a single partition. */
+    pnx8550_mtd.name = "nxp-0";
+    mtdparts = strchr(prom_mtdparts, '=');
+    if (mtdparts)
+		mtdpart_setup(mtdparts + 1);
+	err = parse_mtd_partitions(&pnx8550_mtd, NULL, &real_parts, NULL);
+	if (err > 0) {
+		for (i = 0; i < err; i++) {
+			// write-protect the bad block table.
+			if (!strcasecmp(real_parts[i].name, "bbt"))
+				real_parts[i].mask_flags |= MTD_WRITEABLE;
+			
+			// these partitions use WinCE ECC, which linux doesn't support.
+			// hide them to prevent error messages about uncorrectable ECC
+			// errors.
+			// also, these are the partitions that really shouldn't be
+			// written to from linux, because they will corrupt something
+			// related to the boot process.
+			if (part_is_safe(&real_parts[i]))
+				real_parts[safe_parts++] = real_parts[i];
+			else
+				printk(KERN_DEBUG "pnx8550_nand: hiding partition \"%s\"\n",
+						real_parts[i].name);
+		}
+		err = add_mtd_partitions(&pnx8550_mtd, real_parts, safe_parts);
+		kfree(real_parts);
+	} else if (err == 0) {
+		err = add_mtd_device(&pnx8550_mtd);
+		if (err == 1)
+			return -ENODEV;
+	}
 
     /* Return happy */
     return 0;

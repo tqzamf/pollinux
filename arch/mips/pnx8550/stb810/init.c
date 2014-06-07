@@ -28,12 +28,11 @@
 #include <asm/mach-pnx8550/glb.h>
 #include <trimedia.h>
 #include <framebuffer.h>
+#include <prom.h>
 
 int prom_argc;
 char **prom_argv, **prom_envp;
 unsigned int pnx8550_fb_base;
-extern void  __init prom_init_cmdline(void);
-extern unsigned long get_system_mem_size(void);
 
 const char *get_system_type(void)
 {
@@ -55,6 +54,7 @@ void __init prom_init(void)
     prom_argv = (char **) fw_arg1;
     prom_envp = (char **) fw_arg2;
     prom_init_cmdline();
+    prom_init_mtdparts();
     
     /* TriMedia uses memory above 0x08000000 (for 256M).
      * This memory can be used by Linux instead, but only when the TriMedias

@@ -370,12 +370,6 @@ choice
 	prompt "ECC management for NAND Flash / SmartMedia on AT91 / AVR32"
 	depends on MTD_NAND_ATMEL
 
-config MTD_NAND_PNX8550
-	tristate "NAND Flash support for PNX8550"
-	depends on PNX8550 && MTD_NAND
-	help
-	  This enables the NAND flash controller on the PNX8550.
-
 config MTD_NAND_ATMEL_ECC_HW
 	bool "Hardware ECC"
 	depends on ARCH_AT91SAM9263 || ARCH_AT91SAM9260 || AVR32
@@ -572,5 +566,8 @@ config MTD_NAND_FSMC
 	help
 	  Enables support for NAND Flash chips on the ST Microelectronics
 	  Flexible Static Memory Controller (FSMC)
+
+config MTD_NAND_PNX8550
+	tristate "Support for NAND on PNX8550 XIO bus"
 
 endif # MTD_NAND

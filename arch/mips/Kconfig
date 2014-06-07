@@ -1120,6 +1120,7 @@ config SOC_PNX8550
 	select SYS_HAS_CPU_MIPS32_R1
 	select SYS_HAS_EARLY_PRINTK
 	select SYS_SUPPORTS_32BIT_KERNEL
+	select HIGH_RES_TIMERS
 	select GENERIC_GPIO
 	select ARCH_REQUIRE_GPIOLIB
 	select FB
@@ -2236,9 +2237,6 @@ choice
 	help
 	 Allows the configuration of the timer frequency.
 
-	config HZ_48
-		bool "48 HZ" if SYS_SUPPORTS_48HZ || SYS_SUPPORTS_ARBIT_HZ
-
 	config HZ_100
 		bool "100 HZ" if SYS_SUPPORTS_100HZ || SYS_SUPPORTS_ARBIT_HZ
 
@@ -2258,9 +2256,6 @@ choice
 		bool "1024 HZ" if SYS_SUPPORTS_1024HZ || SYS_SUPPORTS_ARBIT_HZ
 
 endchoice
-
-config SYS_SUPPORTS_48HZ
-	bool
 
 config SYS_SUPPORTS_100HZ
 	bool
@@ -2282,14 +2277,12 @@ config SYS_SUPPORTS_1024HZ
 
 config SYS_SUPPORTS_ARBIT_HZ
 	bool
-	default y if !SYS_SUPPORTS_48HZ && !SYS_SUPPORTS_100HZ && \
-		     !SYS_SUPPORTS_128HZ && !SYS_SUPPORTS_250HZ && \
-		     !SYS_SUPPORTS_256HZ && !SYS_SUPPORTS_1000HZ && \
-		     !SYS_SUPPORTS_1024HZ
+	default y if !SYS_SUPPORTS_100HZ && !SYS_SUPPORTS_128HZ && \
+		     !SYS_SUPPORTS_250HZ && !SYS_SUPPORTS_256HZ && \
+		     !SYS_SUPPORTS_1000HZ && !SYS_SUPPORTS_1024HZ
 
 config HZ
 	int
-	default 48 if HZ_48
 	default 100 if HZ_100
 	default 128 if HZ_128
 	default 250 if HZ_250

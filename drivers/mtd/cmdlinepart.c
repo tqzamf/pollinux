@@ -367,9 +367,11 @@ static int parse_cmdline_partitions(struct mtd_info *master,
  *
  * This function needs to be visible for bootloaders.
  */
-static int mtdpart_setup(char *s)
+int mtdpart_setup(char *s)
 {
-	cmdline = s;
+	// only allow overriding if empty
+	if (!cmdline || !*cmdline)
+		cmdline = s;
 	return 1;
 }
 
