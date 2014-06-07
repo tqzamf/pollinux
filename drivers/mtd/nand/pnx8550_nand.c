@@ -84,8 +84,8 @@ MODULE_AUTHOR("Adam Charrett/Neil Burningham");
 MODULE_DESCRIPTION(THIS_MODULE_DESCRIPTION);
 
 extern int mtdpart_setup(char *s);
-#define MTDPART_UBOOT_END    0x0084000
-#define MTDPART_WINCE0_START 0x3c00000
+#define MTDPART_LOADER_END 0x0004000
+#define MTDPART_INFO_START 0x3ffc000
 
 /******************************************************************************
 * STATIC FUNCTION PROTOTYPES                                                  *
@@ -894,6 +894,30 @@ static void pnx8550_nand_hwcontrol(struct mtd_info *mtd, int cmd, unsigned int c
    // Nothing to do here, its all done by the XIO block
 }
 
+static int part_is_safe(struct mtd_partition *part) {
+	// FlashReader and its info-block at the end of flash. protected even
+	// if the name is changed, end even from partitions merely ovrlapping
+	// it.
+	if (part->offset <= MTDPART_LOADER_END)
+		return 0;
+	if (part->offset + part->size >= MTDPART_INFO_START)
+		return 0;
+	
+	// Windows CE partitions use Microsoft OOB layout. reading them from
+	// Linux causes ECC error messages. writing them from Linux makes them
+	// unbootable.
+	if (!strncasecmp(part->name, "WinCE", strlen("WinCE")))
+		return 0;
+	
+	// the bootloader. uses WinCE-style ECC, and definitely shouldn't be
+	// overwritten accidentially. 
+	if (!strcasecmp(part->name, "U-Boot"))
+		return 0;
+	
+	// all other partitions are fine
+	return 1;
+}
+
 /*
  * Main initialization routine
  */
@@ -978,15 +1002,23 @@ static int __init pnx8550_nand_init(void)
 		mtdpart_setup(mtdparts + 1);
 	err = parse_mtd_partitions(&pnx8550_mtd, NULL, &real_parts, NULL);
 	if (err > 0) {
-		for (i = 0; i < err; i++)
-			if (real_parts[i].offset >= MTDPART_UBOOT_END 
-					&& real_parts[i].offset < MTDPART_WINCE0_START) {
-				// these partitions use WinCE ECC, which linux doesn't
-				// support. hide them to prevent error messages about
-				// uncorrectable ECC errors.
-				real_parts[safe_parts] = real_parts[i];
-				safe_parts++;
-			}
+		for (i = 0; i < err; i++) {
+			// write-protect the bad block table.
+			if (!strcasecmp(real_parts[i].name, "bbt"))
+				real_parts[i].mask_flags |= MTD_WRITEABLE;
+			
+			// these partitions use WinCE ECC, which linux doesn't support.
+			// hide them to prevent error messages about uncorrectable ECC
+			// errors.
+			// also, these are the partitions that really shouldn't be
+			// written to from linux, because they will corrupt something
+			// related to the boot process.
+			if (part_is_safe(&real_parts[i]))
+				real_parts[safe_parts++] = real_parts[i];
+			else
+				printk(KERN_DEBUG "pnx8550_nand: hiding partition \"%s\"\n",
+						real_parts[i].name);
+		}
 		err = add_mtd_partitions(&pnx8550_mtd, real_parts, safe_parts);
 		kfree(real_parts);
 	} else if (err == 0) {
