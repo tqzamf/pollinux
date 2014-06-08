@@ -33,5 +33,9 @@ config SND_AU1X00
 	  Newer drivers for ASoC are available, please do not use
 	  this driver as it will be removed in the future.
 
+config SND_PNX8550AO1
+	tristate "PNX8550 Audio Out 1 on STB810"
+	depends on PNX8550_STB810
+
 endif	# SND_MIPS
 
