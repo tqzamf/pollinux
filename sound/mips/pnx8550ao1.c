@@ -27,6 +27,7 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/module.h>
+#include <linux/kernel.h>
 
 #include <sound/core.h>
 #include <sound/control.h>
@@ -35,6 +36,7 @@
 
 #include <asm/mach-pnx8550/audio.h>
 #include <asm/mach-pnx8550/framebuffer.h>
+#include <asm/div64.h>
 
 MODULE_AUTHOR("Matthias <tqzamf@gmail.com>");
 MODULE_DESCRIPTION("PNX8550 AO1 audio");
@@ -50,7 +52,6 @@ struct snd_pnx8550ao1 {
 	snd_pcm_uframes_t ptr;
 	struct snd_pcm_substream *substream;
 	int expand8;
-	int repeat;
 	int stereo;
 	int volume;
 };
@@ -58,8 +59,6 @@ struct snd_pnx8550ao1 {
 static int pnx8550ao1_gain_info(struct snd_kcontrol *kcontrol,
 			       struct snd_ctl_elem_info *uinfo)
 {
-	struct snd_pnx8550ao1 *chip = snd_kcontrol_chip(kcontrol);
-
 	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
 	uinfo->count = 1;
 	uinfo->value.integer.min = 0;
@@ -178,9 +177,9 @@ static struct snd_pcm_hardware snd_pnx8550ao1_hw = {
 	.info = (SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_BLOCK_TRANSFER
 			| SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID),
 	.formats =          SNDRV_PCM_FMTBIT_S16_LE,
-	.rates =            SNDRV_PCM_RATE_32000,
-	.rate_min =         32000,
-	.rate_max =         32000,
+	.rates =            SNDRV_PCM_RATE_8000_96000 | SNDRV_PCM_RATE_CONTINUOUS,
+	.rate_min =         PNX8550_AO_RATE_MIN,
+	.rate_max =         PNX8550_AO_RATE_MAX,
 	.channels_min =     2,
 	.channels_max =     2,
 	.buffer_bytes_max = 2*PNX8550_AO_BUF_SIZE,
@@ -248,15 +247,14 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	unsigned long control, stereo, expand8, repeat, dds;
+	unsigned long control, stereo, expand8, dds, rem;
+	u64 rate;
 	
 	printk(KERN_DEBUG "pnx8550ao1 prepare %dch %dHz fmt=%d\n",
 			runtime->channels, runtime->rate, runtime->format);
 
 	control = PNX8550_AO_TRANS_MODE_16 | PNX8550_AO_TRANS_MODE_STEREO | PNX8550_AO_SIGN_CONVERT_SIGNED;
-	dds = PNX8550_AO_DDS_32;
 	stereo = expand8 = 0;
-	repeat = 1;
 	
 	//control = PNX8550_AO_TRANS_MODE_16;
 	
@@ -295,48 +293,31 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 		//return -EINVAL;
 	//}
 	
-	//switch (runtime->rate) {
-	//case 48000:
-	//case 24000:
-	//case 12000:
-		//dds = PNX8550_AO_DDS_48;
-		//break;
-	//case 44100:
-	//case 22050:
-	//case 11025:
-		//dds = PNX8550_AO_DDS_441;
-		//break;
-	//case 32000:
-	//case 16000:
-	//case 8000:
-		//dds = PNX8550_AO_DDS_32;
-		//break;
-	//default:
-		//return -EINVAL;
-	//}
-
-	//switch (runtime->rate) {
-	//case 48000:
-	//case 44100:
-	//case 32000:
-		//repeat = 1;
-		//break;
-	//case 24000:
-	//case 22050:
-	//case 16000:
-		//repeat = 2;
-		//break;
-	//case 12000:
-	//case 11025:
-	//case 8000:
-		//repeat = 4;
-		//break;
-	//default:
-		//return -EINVAL;
-	//}
+	// the DDS can do any rate, with ridculously low jitter specs.
+	// the DAC doesn't seem to choke on wildly out-of-spec rates either.
+	// unfortunately, ALSA only supports rates in multiples of 1Hz ;)
+	
+	// fosck = 1.728GHz * N / 2^32; fs = fosck / 256
+	// thus: N = 2^32 * (256 * fs) / 1.728GHz
+	rate = (((u64) runtime->rate) << 32) << 8;
+	rem = do_div(rate, PNX8550_AO_DDS_REF);
+	dds = rate;
+	if (rem > PNX8550_AO_DDS_REF / 2)
+		dds++; // rounding
+	
+	// clamp to allowed values, for safety
+	if (dds < PNX8550_AO_DDS_MIN) {
+		printk(KERN_ERR "pnx8550ao1: clamping DDS %d, must be >%d\n",
+				dds, PNX8550_AO_DDS_MIN);
+		dds = PNX8550_AO_DDS_MIN;
+	}
+	if (dds > PNX8550_AO_DDS_MAX) {
+		printk(KERN_ERR "pnx8550ao1: clamping DDS %d, must be <%d\n",
+				dds, PNX8550_AO_DDS_MAX);
+		dds = PNX8550_AO_DDS_MAX;
+	}
 
 	chip->control = control;
-	chip->repeat = repeat;
 	chip->expand8 = expand8;
 	chip->stereo = stereo;
 	PNX8550_AO_DDS_CTL = dds;
@@ -385,18 +366,22 @@ static int snd_pnx8550ao1_copy(struct snd_pcm_substream *substream, int channel,
                snd_pcm_uframes_t pos, void *src, snd_pcm_uframes_t count)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
+	unsigned int *buffer, *source = src;
+	int i;
 	
 	printk(KERN_DEBUG "pnx8550ao1 copy %d samples from %08x offset %d\n",
 			count, (unsigned int) src, pos);
 
-	//if (!chip->ptr)
-		//return -EAGAIN;
-	//if (pos > PNX8550_AO_SAMPLES)
-		//pos -= PNX8550_AO_SAMPLES;
+	if (pos >= PNX8550_AO_SAMPLES) {
+		// second half of buffer. they are non contiguous for mono.
+		pos -= PNX8550_AO_SAMPLES;
+		buffer = chip->buf2_base;
+	} else
+		buffer = chip->buf1_base;
 	
 	// TODO recoding done here
-	memcpy(chip->buf1_base + frames_to_bytes(substream->runtime, pos),
-			src, frames_to_bytes(substream->runtime, count));
+	for (i = 0; i < count; i++)
+		buffer[pos + i] = source[i];
 	
 	return 0;
 }
@@ -506,7 +491,7 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	}
 
 	/* configure and start the clocks */
-	PNX8550_AO_DDS_CTL = PNX8550_AO_DDS_32;
+	PNX8550_AO_DDS_CTL = PNX8550_AO_DDS_48;
 	PNX8550_AO_OSCK_CTL = PNX8550_AO_CLK_ENABLE;
 	PNX8550_AO_SCLK_CTL = PNX8550_AO_CLK_ENABLE;
 	/* configure interface for I²S */
