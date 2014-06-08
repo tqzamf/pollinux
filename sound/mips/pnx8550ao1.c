@@ -34,6 +34,7 @@
 #include <sound/initval.h>
 
 #include <asm/mach-pnx8550/audio.h>
+#include <asm/mach-pnx8550/framebuffer.h>
 
 MODULE_AUTHOR("Matthias <tqzamf@gmail.com>");
 MODULE_DESCRIPTION("PNX8550 AO1 audio");
@@ -51,191 +52,72 @@ struct snd_pnx8550ao1 {
 	int expand8;
 	int repeat;
 	int stereo;
+	int volume;
 };
 
-//static int pnx8550ao1_gain_info(struct snd_kcontrol *kcontrol,
-			       //struct snd_ctl_elem_info *uinfo)
-//{
-	//struct snd_pnx8550ao1 *chip = snd_kcontrol_chip(kcontrol);
+static int pnx8550ao1_gain_info(struct snd_kcontrol *kcontrol,
+			       struct snd_ctl_elem_info *uinfo)
+{
+	struct snd_pnx8550ao1 *chip = snd_kcontrol_chip(kcontrol);
 
-	//uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
-	//uinfo->count = 1;
-	//uinfo->value.integer.min = 0;
-	//uinfo->value.integer.max = AK4705_VOL_MAX;
-	//return 0;
-//}
+	uinfo->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	uinfo->count = 1;
+	uinfo->value.integer.min = 0;
+	uinfo->value.integer.max = AK4705_VOL_MAX;
+	return 0;
+}
 
-//static int pnx8550ao1_gain_get(struct snd_kcontrol *kcontrol,
-			       //struct snd_ctl_elem_value *ucontrol)
-//{
-	//struct snd_pnx8550ao1 *chip = snd_kcontrol_chip(kcontrol);
-	//int vol;
+static int pnx8550ao1_gain_get(struct snd_kcontrol *kcontrol,
+			       struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_pnx8550ao1 *chip = snd_kcontrol_chip(kcontrol);
 
-	//vol = AK4705_VOL_DEFAULT; // TODO read from AK4705
-	//ucontrol->value.integer.value[0] = vol;
+	ucontrol->value.integer.value[0] = chip->volume;
 
-	//return 0;
-//}
+	return 0;
+}
 
-//static int pnx8550ao1_gain_put(struct snd_kcontrol *kcontrol,
-			//struct snd_ctl_elem_value *ucontrol)
-//{
-	//struct snd_pnx8550ao1 *chip = snd_kcontrol_chip(kcontrol);
-	//int newvol, oldvol;
+static int pnx8550ao1_gain_put(struct snd_kcontrol *kcontrol,
+			struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_pnx8550ao1 *chip = snd_kcontrol_chip(kcontrol);
+	int newvol, oldvol;
 
-	//oldvol = AK4705_VOL_DEFAULT; // TODO read from AK4705
-	//newvol = ucontrol->value.integer.value[0] & 0x3f;
-	//if (newvol > AK4705_VOL_MAX)
-		//newvol = AK4705_VOL_MAX;
-	//newvol = newvol; // TODO write AK4705 volume
+	oldvol = chip->volume;
+	newvol = ucontrol->value.integer.value[0];
+	if (newvol < 0)
+		newvol = 0;
+	if (newvol > AK4705_VOL_MAX)
+		newvol = AK4705_VOL_MAX;
+	chip->volume = newvol;
+	pnx8550fb_set_volume(newvol);
 
-	//return newvol != oldvol;
-//}
+	return newvol != oldvol;
+}
 
-//static struct snd_kcontrol_new pnx8550ao1_ctrl_volume __devinitdata = {
-	//.iface          = SNDRV_CTL_ELEM_IFACE_MIXER,
-	//.name           = "Main Playback Volume",
-	//.index          = 0,
-	//.access         = SNDRV_CTL_ELEM_ACCESS_READWRITE,
-	//.info           = pnx8550ao1_gain_info,
-	//.get            = pnx8550ao1_gain_get,
-	//.put            = pnx8550ao1_gain_put,
-//};
+static struct snd_kcontrol_new pnx8550ao1_ctrl_volume __devinitdata = {
+	.iface          = SNDRV_CTL_ELEM_IFACE_MIXER,
+	.name           = "Main Playback Volume",
+	.index          = 0,
+	.access         = SNDRV_CTL_ELEM_ACCESS_READWRITE,
+	.info           = pnx8550ao1_gain_info,
+	.get            = pnx8550ao1_gain_get,
+	.put            = pnx8550ao1_gain_put,
+};
 
-//static int __devinit snd_pnx8550ao1_new_mixer(struct snd_pnx8550ao1 *chip)
-//{
-	//return snd_ctl_add(chip->card,
-			  //snd_ctl_new1(&pnx8550ao1_ctrl_volume, chip));
-//}
-
-/* low-level audio interface DMA */
-
-///* get data out of bounce buffer, count must be a multiple of 32 */
-///* returns 1 if a period has elapsed */
-//static int snd_pnx8550ao1_dma_pull_frag(struct snd_pnx8550ao1 *chip,
-					//unsigned int ch, unsigned int count)
-//{
-	//int ret;
-	//unsigned long src_base, src_pos, dst_mask;
-	//unsigned char *dst_base;
-	//int dst_pos;
-	//u64 *src;
-	//s16 *dst;
-	//u64 x;
-	//unsigned long flags;
-	//struct snd_pcm_runtime *runtime = chip->channel[ch].substream->runtime;
-
-	//spin_lock_irqsave(&chip->channel[ch].lock, flags);
-
-	//src_base = (unsigned long) chip->ring_base | (ch << CHANNEL_RING_SHIFT);
-	//src_pos = readq(&mace->perif.audio.chan[ch].read_ptr);
-	//dst_base = runtime->dma_area;
-	//dst_pos = chip->channel[ch].pos;
-	//dst_mask = frames_to_bytes(runtime, runtime->buffer_size) - 1;
-
-	///* check if a period has elapsed */
-	//chip->channel[ch].size += (count >> 3); /* in frames */
-	//ret = chip->channel[ch].size >= runtime->period_size;
-	//chip->channel[ch].size %= runtime->period_size;
-
-	//while (count) {
-		//src = (u64 *)(src_base + src_pos);
-		//dst = (s16 *)(dst_base + dst_pos);
-
-		//x = *src;
-		//dst[0] = (x >> CHANNEL_LEFT_SHIFT) & 0xffff;
-		//dst[1] = (x >> CHANNEL_RIGHT_SHIFT) & 0xffff;
-
-		//src_pos = (src_pos + sizeof(u64)) & CHANNEL_RING_MASK;
-		//dst_pos = (dst_pos + 2 * sizeof(s16)) & dst_mask;
-		//count -= sizeof(u64);
-	//}
-
-	//writeq(src_pos, &mace->perif.audio.chan[ch].read_ptr); /* in bytes */
-	//chip->channel[ch].pos = dst_pos;
-
-	//spin_unlock_irqrestore(&chip->channel[ch].lock, flags);
-	//return ret;
-//}
-
-///* put some DMA data in bounce buffer, count must be a multiple of 32 */
-///* returns 1 if a period has elapsed */
-//static int snd_pnx8550ao1_dma_push_frag(struct snd_pnx8550ao1 *chip,
-					//unsigned int ch, unsigned int count)
-//{
-	//int ret;
-	//s64 l, r;
-	//unsigned long dst_base, dst_pos, src_mask;
-	//unsigned char *src_base;
-	//int src_pos;
-	//u64 *dst;
-	//s16 *src;
-	//unsigned long flags;
-	//struct snd_pcm_runtime *runtime = chip->channel[ch].substream->runtime;
-
-	//spin_lock_irqsave(&chip->channel[ch].lock, flags);
-
-	//dst_base = (unsigned long)chip->ring_base | (ch << CHANNEL_RING_SHIFT);
-	//dst_pos = readq(&mace->perif.audio.chan[ch].write_ptr);
-	//src_base = runtime->dma_area;
-	//src_pos = chip->channel[ch].pos;
-	//src_mask = frames_to_bytes(runtime, runtime->buffer_size) - 1;
-
-	///* check if a period has elapsed */
-	//chip->channel[ch].size += (count >> 3); /* in frames */
-	//ret = chip->channel[ch].size >= runtime->period_size;
-	//chip->channel[ch].size %= runtime->period_size;
-
-	//while (count) {
-		//src = (s16 *)(src_base + src_pos);
-		//dst = (u64 *)(dst_base + dst_pos);
-
-		//l = src[0]; /* sign extend */
-		//r = src[1]; /* sign extend */
-
-		//*dst = ((l & 0x00ffffff) << CHANNEL_LEFT_SHIFT) |
-			//((r & 0x00ffffff) << CHANNEL_RIGHT_SHIFT);
-
-		//dst_pos = (dst_pos + sizeof(u64)) & CHANNEL_RING_MASK;
-		//src_pos = (src_pos + 2 * sizeof(s16)) & src_mask;
-		//count -= sizeof(u64);
-	//}
-
-	//writeq(dst_pos, &mace->perif.audio.chan[ch].write_ptr); /* in bytes */
-	//chip->channel[ch].pos = src_pos;
-
-	//spin_unlock_irqrestore(&chip->channel[ch].lock, flags);
-	//return ret;
-//}
-
-//static int snd_pnx8550ao1_dma_start(struct snd_pcm_substream *substream)
-//{
-	//struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
-	//struct snd_pnx8550ao1_chan *chan = substream->runtime->private_data;
-	//int ch = chan->idx;
-
-	///* reset DMA channel */
-	//writeq(CHANNEL_CONTROL_RESET, &mace->perif.audio.chan[ch].control);
-	//udelay(10);
-	//writeq(0, &mace->perif.audio.chan[ch].control);
-
-	//if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		///* push a full buffer */
-		//snd_pnx8550ao1_dma_push_frag(chip, ch, CHANNEL_RING_SIZE - 32);
-	//}
-	///* set DMA to wake on 50% empty and enable interrupt */
-	//writeq(CHANNEL_DMA_ENABLE | CHANNEL_INT_THRESHOLD_50,
-	       //&mace->perif.audio.chan[ch].control);
-	//return 0;
-//}
-
-//static int snd_pnx8550ao1_dma_stop(struct snd_pcm_substream *substream)
-//{
-	//struct snd_pnx8550ao1_chan *chan = substream->runtime->private_data;
-
-	//writeq(0, &mace->perif.audio.chan[chan->idx].control);
-	//return 0;
-//}
+static int __devinit snd_pnx8550ao1_new_mixer(struct snd_pnx8550ao1 *chip)
+{
+	int err;
+	
+	err = snd_ctl_add(chip->card,
+			  snd_ctl_new1(&pnx8550ao1_ctrl_volume, chip));
+	if (!err) {
+		chip->volume = AK4705_VOL_DEFAULT;
+		pnx8550fb_set_volume(chip->volume);
+	}
+	
+	return err;
+}
 
 static irqreturn_t snd_pnx8550ao1_isr(int irq, void *dev_id)
 {
@@ -671,11 +553,11 @@ static int __devinit snd_pnx8550ao1_probe(struct platform_device *pdev)
 		snd_card_free(card);
 		return err;
 	}
-	//err = snd_pnx8550ao1_new_mixer(chip);
-	//if (err < 0) {
-		//snd_card_free(card);
-		//return err;
-	//}
+	err = snd_pnx8550ao1_new_mixer(chip);
+	if (err < 0) {
+		snd_card_free(card);
+		return err;
+	}
 
 	strcpy(card->shortname, "PNX8550 AO1");
 	strcpy(card->driver, card->shortname);

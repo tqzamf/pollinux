@@ -17,11 +17,13 @@
  *
  */
 #include <linux/pci.h>
+#include <linux/module.h>
 
 #include <glb.h>
 #include <pci.h>
 #include <int.h>
 #include <framebuffer.h>
+#include <audio.h>
 #include <linux/i2c.h>
 #include <i2c.h>
 
@@ -155,7 +157,7 @@ static const unsigned char pnx8550fb_scart_data[] = {
     0x00, // address byte: start with first register
     0x70, // STBY, MUTE, DAPD=normal operation, manual startup, audio 24-bit I²S without de-emphasis
     0x64, // main audio = stereo from DAC, unused audio = mute, main volume unmuted
-    0x19, // main volume = -12dB
+    0x00, // main volume muted (until the audio driver loads and sets the default volume)
     0x27, // main volume transition = 2048ck, DAC volume = ±0dB, unused audio = stereo
     0x11, // SCART = encoder CVBS + RGB, S-Video = encoder Y+C, RCA = encoder CVBS
     0x5F, // TV CVBS, R, G, B, FB = enabled, S-Video CVBS = enabled, S-Video C = disabled
@@ -174,6 +176,12 @@ static const unsigned char pnx8550fb_scart_standby[] = {
     0xd5,0x1f,0x27,0x9c,0x00,0x04,0x00,0x00,0x9E,
 };
 
+/* command to set SCART switch main volume. used by audio. */
+static unsigned char pnx8550fb_scart_volume[] = {
+    0x02, // address byte: main volume
+    0x00, // main volume. overwritten by pnx8550fb_set_volume
+};
+
 static struct i2c_msg pnx8550fb_scart_msg = {
 	.addr = I2C_SCART_ADDR,
 	.flags = 0,
@@ -186,6 +194,13 @@ static struct i2c_msg pnx8550fb_shutdown_msg = {
 	.flags = 0,
 	.len = sizeof(pnx8550fb_scart_standby),
 	.buf = (unsigned char *) pnx8550fb_scart_standby,
+};
+
+static struct i2c_msg pnx8550fb_volume_msg = {
+	.addr = I2C_SCART_ADDR,
+	.flags = 0,
+	.len = sizeof(pnx8550fb_scart_volume),
+	.buf = (unsigned char *) pnx8550fb_scart_volume,
 };
 
 /* Function used to set up Scart switch */
@@ -201,6 +216,24 @@ static void pnx8550fb_shutdown_scart(void)
 {
 	struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP0105_BUS1);
 	if ((i2c_transfer(adapter, &pnx8550fb_shutdown_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error\n", __func__);
+}
+
+/* Function to set the main volume in the Scart switch / DAC chip */
+void pnx8550fb_set_volume(int volume)
+{
+	struct i2c_adapter *adapter;
+	char vol;
+	
+	vol = volume;
+	if (vol < 0)
+		vol = 0;
+	if (vol > AK4705_VOL_MAX)
+		vol = AK4705_VOL_MAX;
+	pnx8550fb_scart_volume[1] = vol;
+	
+	adapter = i2c_get_adapter(PNX8550_I2C_IP0105_BUS1);
+	if ((i2c_transfer(adapter, &pnx8550fb_volume_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error\n", __func__);
 }
 
@@ -380,3 +413,5 @@ void pnx8550fb_shutdown_display(void)
     /* Shut down the Scart switch */
     pnx8550fb_shutdown_scart();
 }
+
+EXPORT_SYMBOL(pnx8550fb_set_volume);
