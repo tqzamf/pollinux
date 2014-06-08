@@ -150,17 +150,6 @@ static const unsigned char pnx8550fb_anabel_unblank[] =
     0x6e,0x00
 };
 
-/* command to shut down the unused second video channel */
-static const unsigned char pnx8550fb_anabel2_shutdown[] =
-{
-    0xa5,0x01
-};
-/* command to shut down the unused audio channels */
-static const unsigned char pnx8550fb_anabel_audio_shutdown[] =
-{
-    0xfe,0x01
-};
-
 /* Register / Data information used to initialise SCART switch. */
 static const unsigned char pnx8550fb_scart_data[] = {
     0x00, // address byte: start with first register
@@ -221,11 +210,6 @@ static struct i2c_msg pnx8550fb_anabel_msg = {
 	.len = 2,
 };
 
-static struct i2c_msg pnx8550fb_anabel2_msg = {
-	.flags = 0,
-	.len = 2,
-};
-
 /* Function used to set up PAL/NTSC using Anabel */
 static void pnx8550fb_setup_anabel(int pal)
 {
@@ -249,21 +233,6 @@ static void pnx8550fb_setup_anabel(int pal)
 			break;
 		}
 	}
-
-	// shutdown second video channel
-	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel2_shutdown;
-	pnx8550fb_anabel2_msg.addr = I2C_ANABEL2_ADDR;
-	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
-		printk(KERN_ERR "%s: write error for VIDEO2\n", __func__);
-
-	// shutdown both audio channels
-	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel_audio_shutdown;
-	pnx8550fb_anabel2_msg.addr = I2C_ANABEL_AUDIO1_ADDR;
-	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
-		printk(KERN_ERR "%s: write error for AUDIO1\n", __func__);
-	pnx8550fb_anabel2_msg.addr = I2C_ANABEL_AUDIO2_ADDR;
-	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
-		printk(KERN_ERR "%s: write error for AUDIO2\n", __func__);
 }
 
 /* Function used to set up PAL/NTSC using Anabel */
@@ -346,6 +315,49 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     outl(0x1, PCI_BASE | 0x10e240);
 }
 
+/* command to shut down the unused second video channel on the Anabel */
+static const unsigned char pnx8550fb_anabel2_shutdown[] =
+{
+    0xa5,0x01
+};
+/* command to shut down the unused audio channels on the Anabel */
+static const unsigned char pnx8550fb_anabel_audio_shutdown[] =
+{
+    0xfe,0x01
+};
+
+static struct i2c_msg pnx8550fb_anabel2_msg = {
+	.flags = 0,
+	.len = 2,
+};
+
+/* shuts down the secondary QVCP and the unused parts of Anabel */
+static void pnx8550fb_shutdown_unused(void)
+{
+    struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
+
+	// shutdown PNX8510 second video channel
+	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel2_shutdown;
+	pnx8550fb_anabel2_msg.addr = I2C_ANABEL2_ADDR;
+	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error for VIDEO2\n", __func__);
+
+	// shutdown both PNX8510 audio channels
+	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel_audio_shutdown;
+	pnx8550fb_anabel2_msg.addr = I2C_ANABEL_AUDIO1_ADDR;
+	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error for AUDIO1\n", __func__);
+	pnx8550fb_anabel2_msg.addr = I2C_ANABEL_AUDIO2_ADDR;
+	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error for AUDIO2\n", __func__);
+
+	// shutdown secondary QVCP
+	outl(0x80000000, PCI_BASE | 0x10fff4);
+	outl(0x00, PCI_BASE | 0x047a08);
+	outl(0x00, PCI_BASE | 0x047a0c);
+	outl(0x00, PCI_BASE | 0x047a1c);
+}
+
 /* Function used to initialise the screen. */
 void pnx8550fb_setup_display(unsigned int base, int pal)
 {
@@ -357,6 +369,9 @@ void pnx8550fb_setup_display(unsigned int base, int pal)
 
     /* Set up the Scart switch */
     pnx8550fb_setup_scart();
+    
+    /* power-down unused hardware */
+    pnx8550fb_shutdown_unused();
 }
 
 /* Function used to shutdown the video system. */
