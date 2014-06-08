@@ -5,6 +5,8 @@ mount -t proc -o nodev,noexec,nosuid proc /proc
 mount -t devtmpfs dev /dev
 # make modprobe etc. happy
 mkdir -p /lib/modules/$(cut -d' ' -f3 </proc/version)
+# disable framebuffer console blanking
+echo -en '\e[9;0]' >/dev/tty0
 
 # wait for root device, if given on command line.
 eval $(awk -v RS=' ' -v FS== '/^root=/{print}' /proc/cmdline)

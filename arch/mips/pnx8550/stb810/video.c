@@ -27,6 +27,9 @@
 
 #define I2C_ANABEL_ADDR                0x66
 #define I2C_SCART_ADDR                 0x11
+#define I2C_ANABEL2_ADDR               0x6e
+#define I2C_ANABEL_AUDIO1_ADDR         0x76
+#define I2C_ANABEL_AUDIO2_ADDR         0x7e
 
 /* Register / Data pairs used to initialise Anabel into PAL mode */
 static const unsigned char pnx8550fb_anabel_pal[] =
@@ -137,6 +140,27 @@ static const unsigned char pnx8550fb_anabel_ntsc[] =
     0x6e,0x00
 };
 
+/* commands to blank and unblank the Anabel */
+static const unsigned char pnx8550fb_anabel_blank[] =
+{
+    0x6e,0x40
+};
+static const unsigned char pnx8550fb_anabel_unblank[] =
+{
+    0x6e,0x00
+};
+
+/* command to shut down the unused second video channel */
+static const unsigned char pnx8550fb_anabel2_shutdown[] =
+{
+    0xa5,0x01
+};
+/* command to shut down the unused audio channels */
+static const unsigned char pnx8550fb_anabel_audio_shutdown[] =
+{
+    0xfe,0x01
+};
+
 /* Register / Data information used to initialise SCART switch. */
 static const unsigned char pnx8550fb_scart_data[] = {
     0x00, // address byte: start with first register
@@ -197,6 +221,11 @@ static struct i2c_msg pnx8550fb_anabel_msg = {
 	.len = 2,
 };
 
+static struct i2c_msg pnx8550fb_anabel2_msg = {
+	.flags = 0,
+	.len = 2,
+};
+
 /* Function used to set up PAL/NTSC using Anabel */
 static void pnx8550fb_setup_anabel(int pal)
 {
@@ -220,6 +249,35 @@ static void pnx8550fb_setup_anabel(int pal)
 			break;
 		}
 	}
+
+	// shutdown second video channel
+	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel2_shutdown;
+	pnx8550fb_anabel2_msg.addr = I2C_ANABEL2_ADDR;
+	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error for VIDEO2\n", __func__);
+
+	// shutdown both audio channels
+	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel_audio_shutdown;
+	pnx8550fb_anabel2_msg.addr = I2C_ANABEL_AUDIO1_ADDR;
+	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error for AUDIO1\n", __func__);
+	pnx8550fb_anabel2_msg.addr = I2C_ANABEL_AUDIO2_ADDR;
+	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error for AUDIO2\n", __func__);
+}
+
+/* Function used to set up PAL/NTSC using Anabel */
+void pnx8550fb_set_blanking(int blank)
+{
+    struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
+
+    if (blank)
+		pnx8550fb_anabel_msg.buf = (unsigned char *) pnx8550fb_anabel_blank;
+	else
+		pnx8550fb_anabel_msg.buf = (unsigned char *) pnx8550fb_anabel_unblank;
+
+	if ((i2c_transfer(adapter, &pnx8550fb_anabel_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error\n", __func__);
 }
 
 /* Function used to set up PAL/NTSC using the QVCP */

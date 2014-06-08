@@ -10,6 +10,9 @@
 
 extern void pnx8550fb_shutdown_display(void);
 extern void pnx8550fb_setup_display(unsigned int base, int pal);
+extern void pnx8550fb_set_blanking(int blank);
+
+#define PNX8550FB_PSEUDO_PALETTE_SIZE     16
 
 /* Macros defining the frame buffer display attributes.
  * Maximum size is exactly the 1620k required by the PAL framebuffer.

@@ -77,7 +77,7 @@ static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_
 {
 	u32 v;
 
-	if (regno >= 16)	/* no. of virtual palette registers */
+	if (regno >= PNX8550FB_PSEUDO_PALETTE_SIZE)
 		return 1;
 
 	v = (red >> 8 << 16) | (green >> 8 << 8) | (blue >> 8 << 0);
@@ -89,6 +89,7 @@ static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_
 /* Stub to make X11 happy. It spits out annoying errors otherwise. */
 static int pnx8550_framebuffer_blank(int blank, struct fb_info *info)
 {
+	pnx8550fb_set_blanking(blank);
 	return 0;
 }
 
@@ -217,7 +218,8 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	fb_base = fb_res->start;
 	fb_ptr = ioremap_cachable(fb_base, PNX8550_FRAMEBUFFER_SIZE);
 	
-	info = framebuffer_alloc(sizeof(struct pnx8550fb_par) + sizeof(u32) * 16, &dev->dev);
+	info = framebuffer_alloc(sizeof(struct pnx8550fb_par)
+			+ sizeof(u32) * PNX8550FB_PSEUDO_PALETTE_SIZE, &dev->dev);
 	if (!info) {
 		printk(KERN_ERR "pnx8550fb alloc failed\n");
 		return 1;
