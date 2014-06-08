@@ -2166,6 +2166,13 @@ config FB_PNX4008_DUM_RGB
 	---help---
 	  Say Y here to enable support for PNX4008 RGB Framebuffer
 
+config FB_PNX8550
+	tristate "PAL/NTSC framebuffer for the PNX8550 STB810 platform"
+	depends on FB && PNX8550_STB810
+	select FB_SYS_FILLRECT
+	select FB_SYS_COPYAREA
+	select FB_SYS_IMAGEBLIT
+
 config FB_IBM_GXT4500
 	tristate "Framebuffer support for IBM GXT4500P adaptor"
 	depends on FB && PPC
