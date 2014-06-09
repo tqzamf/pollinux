@@ -45,14 +45,11 @@ MODULE_LICENSE("GPL");
 struct snd_pnx8550ao1 {
 	struct snd_card *card;
 	unsigned int control;
-	void *buf1_base;
+	void *buffer;
 	dma_addr_t buf1_dma;
-	void *buf2_base;
 	dma_addr_t buf2_dma;
 	snd_pcm_uframes_t ptr;
 	struct snd_pcm_substream *substream;
-	int expand8;
-	int stereo;
 	int volume;
 };
 
@@ -135,8 +132,6 @@ static irqreturn_t snd_pnx8550ao1_isr(int irq, void *dev_id)
 		chip->ptr = 0;
 		control |= PNX8550_AO_BUF2;
 	}
-	printk(KERN_DEBUG "pnx8550ao1: status %08x control %08x, next pointer is %d\n",
-			status, control, chip->ptr);
 	
 	// clear UDR and HBE errors, just in case
 	if (status & (PNX8550_AO_UDR | PNX8550_AO_HBE)) {
@@ -154,29 +149,10 @@ static irqreturn_t snd_pnx8550ao1_isr(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
-///* PCM hardware definition */
-//static struct snd_pcm_hardware snd_pnx8550ao1_hw = {
-	//.info = (SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_BLOCK_TRANSFER),
-	//.formats =          SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_U16_LE
-                                //| SNDRV_PCM_FMTBIT_S8 | SNDRV_PCM_FMTBIT_U8,
-	//.rates =            SNDRV_PCM_RATE_8000_48000,
-	//.rate_min =         8000,
-	//.rate_max =         48000,
-	//.channels_min =     1,
-	//.channels_max =     2,
-	//.buffer_bytes_max = PNX8550_AO_SAMPLES,
-	//.period_bytes_min = PNX8550_AO_SAMPLES,
-	//.period_bytes_max = PNX8550_AO_SAMPLES,
-	//.periods_min =      1,
-	//.periods_max =      1,
-//};
-
-/* PCM hardware definition */
 static struct snd_pcm_hardware snd_pnx8550ao1_hw = {
-	// TODO mmap?
 	.info = (SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_BLOCK_TRANSFER
 			| SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID),
-	.formats =          SNDRV_PCM_FMTBIT_S16_LE,
+	.formats =          SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_U16_LE,
 	.rates =            SNDRV_PCM_RATE_8000_96000 | SNDRV_PCM_RATE_CONTINUOUS,
 	.rate_min =         PNX8550_AO_RATE_MIN,
 	.rate_max =         PNX8550_AO_RATE_MAX,
@@ -189,13 +165,10 @@ static struct snd_pcm_hardware snd_pnx8550ao1_hw = {
 	.periods_max =      2,
 };
 
-/* PCM playback open callback */
 static int snd_pnx8550ao1_open(struct snd_pcm_substream *substream)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
-
-	printk(KERN_DEBUG "pnx8550ao1 open\n");
 
 	chip->ptr = 0;
 	chip->substream = substream;
@@ -204,94 +177,51 @@ static int snd_pnx8550ao1_open(struct snd_pcm_substream *substream)
 	return 0;
 }
 
-/* PCM close callback */
 static int snd_pnx8550ao1_close(struct snd_pcm_substream *substream)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
-
-	printk(KERN_DEBUG "pnx8550ao1 close\n");
 
 	runtime->private_data = NULL;
 	chip->substream = NULL;
 	return 0;
 }
 
-
-/* hw_params callback */
 static int snd_pnx8550ao1_hw_params(struct snd_pcm_substream *substream,
 					struct snd_pcm_hw_params *hw_params)
 {
-	int err;
-	
-	err = snd_pcm_lib_alloc_vmalloc_buffer(substream,
+	return snd_pcm_lib_alloc_vmalloc_buffer(substream,
 						params_buffer_bytes(hw_params));
-	//printk(KERN_DEBUG "pnx8550ao1 hw_params %d\n", err);
-	
-	return err;
 }
 
-/* hw_free callback */
 static int snd_pnx8550ao1_hw_free(struct snd_pcm_substream *substream)
 {
-	int err;
-
-	err = snd_pcm_lib_free_vmalloc_buffer(substream);
-	//printk(KERN_DEBUG "pnx8550ao1 hw_free %d\n", err);
-	
-	return err;
+	return snd_pcm_lib_free_vmalloc_buffer(substream);
 }
 
-/* prepare callback */
 static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	unsigned long control, stereo, expand8, dds, rem;
+	unsigned long control, dds, rem;
 	u64 rate;
 	
-	printk(KERN_DEBUG "pnx8550ao1 prepare %dch %dHz fmt=%d\n",
+	printk(KERN_DEBUG "pnx8550ao1: setting %dch %dHz, format=%d\n",
 			runtime->channels, runtime->rate, runtime->format);
 
-	control = PNX8550_AO_TRANS_MODE_16 | PNX8550_AO_TRANS_MODE_STEREO | PNX8550_AO_SIGN_CONVERT_SIGNED;
-	stereo = expand8 = 0;
-	
-	//control = PNX8550_AO_TRANS_MODE_16;
-	
-	//if (runtime->channels == 2) {
-		//control |= PNX8550_AO_TRANS_MODE_STEREO;
-		//stereo = 1;
-	//} else if (runtime->channels == 1) {
-		//control |= PNX8550_AO_TRANS_MODE_MONO;
-		//stereo = 0;
-	//} else
-		//return -EINVAL;
-	
-	//switch (runtime->format) {
-	//case SNDRV_PCM_FORMAT_S8:
-	//case SNDRV_PCM_FORMAT_S16_LE:
-		//control |= PNX8550_AO_SIGN_CONVERT_SIGNED;
-		//break;
-	//case SNDRV_PCM_FORMAT_U8:
-	//case SNDRV_PCM_FORMAT_U16_LE:
-		//control |= PNX8550_AO_SIGN_CONVERT_UNSIGNED;
-		//break;
-	//default:
-		//return -EINVAL;
-	//}
-	
-	//switch (runtime->format) {
-	//case SNDRV_PCM_FORMAT_S8:
-	//case SNDRV_PCM_FORMAT_U8:
-		//expand8 = 1;
-		//break;
-	//case SNDRV_PCM_FORMAT_S16_LE:
-	//case SNDRV_PCM_FORMAT_U16_LE:
-		//expand8 = 0;
-		//break;
-	//default:
-		//return -EINVAL;
-	//}
+	control = PNX8550_AO_TRANS_MODE_16 | PNX8550_AO_TRANS_MODE_STEREO;
+	// signed / unsigned conversion can be done in hardware.
+	// endianness can't, unfortunately.
+	switch (runtime->format) {
+	case SNDRV_PCM_FORMAT_S16_LE:
+		control |= PNX8550_AO_SIGN_CONVERT_SIGNED;
+		break;
+	case SNDRV_PCM_FORMAT_U16_LE:
+		control |= PNX8550_AO_SIGN_CONVERT_UNSIGNED;
+		break;
+	default:
+		return -EINVAL;
+	}
 	
 	// the DDS can do any rate, with ridculously low jitter specs.
 	// the DAC doesn't seem to choke on wildly out-of-spec rates either.
@@ -307,30 +237,26 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 	
 	// clamp to allowed values, for safety
 	if (dds < PNX8550_AO_DDS_MIN) {
-		printk(KERN_ERR "pnx8550ao1: clamping DDS %d, must be >%d\n",
+		printk(KERN_ERR "pnx8550ao1: clamping DDS %ld, must be >%d\n",
 				dds, PNX8550_AO_DDS_MIN);
 		dds = PNX8550_AO_DDS_MIN;
 	}
 	if (dds > PNX8550_AO_DDS_MAX) {
-		printk(KERN_ERR "pnx8550ao1: clamping DDS %d, must be <%d\n",
+		printk(KERN_ERR "pnx8550ao1: clamping DDS %ld, must be <%d\n",
 				dds, PNX8550_AO_DDS_MAX);
 		dds = PNX8550_AO_DDS_MAX;
 	}
 
 	chip->control = control;
-	chip->expand8 = expand8;
-	chip->stereo = stereo;
 	PNX8550_AO_DDS_CTL = dds;
 	return 0;
 }
 
-/* trigger callback */
 static int snd_pnx8550ao1_trigger(struct snd_pcm_substream *substream,
 				      int cmd)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
 
-	//printk(KERN_DEBUG "pnx8550ao1 trigger %d\n", cmd);
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 		chip->control |= (PNX8550_AO_TRANS_ENABLE | PNX8550_AO_BUF_INTEN);
@@ -344,49 +270,29 @@ static int snd_pnx8550ao1_trigger(struct snd_pcm_substream *substream,
 	PNX8550_AO_CTL = chip->control | PNX8550_AO_UDR | PNX8550_AO_HBE
 				| PNX8550_AO_BUF1 | PNX8550_AO_BUF2;
 
-	
 	return 0;
 }
 
-/* pointer callback */
 static snd_pcm_uframes_t
 snd_pnx8550ao1_pointer(struct snd_pcm_substream *substream)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
-	snd_pcm_uframes_t ptr;
 
-	/* get the current hardware pointer */
-	ptr = chip->ptr;
-	printk(KERN_DEBUG "pnx8550ao1 pointer %d\n", ptr);
-	
-	return ptr;
+	/* get the current "hardware" pointer */
+	return chip->ptr;
 }
 
 static int snd_pnx8550ao1_copy(struct snd_pcm_substream *substream, int channel,
                snd_pcm_uframes_t pos, void *src, snd_pcm_uframes_t count)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
-	unsigned int *buffer, *source = src;
-	int i;
 	
-	printk(KERN_DEBUG "pnx8550ao1 copy %d samples from %08x offset %d\n",
-			count, (unsigned int) src, pos);
+	memcpy(chip->buffer + frames_to_bytes(substream->runtime, pos),
+			src, frames_to_bytes(substream->runtime, count));
 
-	if (pos >= PNX8550_AO_SAMPLES) {
-		// second half of buffer. they are non contiguous for mono.
-		pos -= PNX8550_AO_SAMPLES;
-		buffer = chip->buf2_base;
-	} else
-		buffer = chip->buf1_base;
-	
-	// TODO recoding done here
-	for (i = 0; i < count; i++)
-		buffer[pos + i] = source[i];
-	
 	return 0;
 }
 
-/* operators */
 static struct snd_pcm_ops snd_pnx8550ao1_playback_ops = {
 	.open =        snd_pnx8550ao1_open,
 	.close =       snd_pnx8550ao1_close,
@@ -401,7 +307,6 @@ static struct snd_pcm_ops snd_pnx8550ao1_playback_ops = {
 	.mmap =        snd_pcm_lib_mmap_vmalloc,
 };
 
-/* create a pcm device */
 static int __devinit snd_pnx8550ao1_new_pcm(struct snd_pnx8550ao1 *chip)
 {
 	struct snd_pcm *pcm;
@@ -422,19 +327,18 @@ static int __devinit snd_pnx8550ao1_new_pcm(struct snd_pnx8550ao1 *chip)
 	return 0;
 }
 
-/* ALSA driver */
-
 static int snd_pnx8550ao1_free(struct snd_pnx8550ao1 *chip)
 {
-	printk(KERN_DEBUG "pnx8550ao1 free\n");
-
+	// mute the volume; there can be noise on the outputs otherwise
+	pnx8550fb_set_volume(0);
+	
 	/* reset interface and disable transmission */
 	PNX8550_AO_STATUS = PNX8550_AO_RESET;
 
 	/* release IRQ */
 	free_irq(PNX8550_AO_IRQ, chip);
 
-	dma_free_coherent(NULL, PNX8550_AO_BUF_ALLOC, chip->buf1_base,
+	dma_free_coherent(NULL, PNX8550_AO_BUF_ALLOC, chip->buffer,
 			chip->buf1_dma);
 
 	/* release card data */
@@ -467,15 +371,14 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	chip->card = card;
 
 	/* allocate DMA-capable buffers */
-	chip->buf1_base = dma_alloc_coherent(NULL, PNX8550_AO_BUF_ALLOC,
+	chip->buffer = dma_alloc_coherent(NULL, PNX8550_AO_BUF_ALLOC,
 					     &chip->buf1_dma, GFP_USER);
-	if (chip->buf1_base == NULL) {
+	if (chip->buffer == NULL) {
 		printk(KERN_ERR
 		       "pnx8550ao1: could not allocate ring buffers\n");
 		kfree(chip);
 		return -ENOMEM;
 	}
-	chip->buf2_base = chip->buf1_base + PNX8550_AO_BUF_SIZE;
 	chip->buf2_dma = chip->buf1_dma + PNX8550_AO_BUF_SIZE;
 
 	/* reset interface and disable transmission for the time being */
@@ -549,6 +452,8 @@ static int __devinit snd_pnx8550ao1_probe(struct platform_device *pdev)
 	strcpy(card->longname, "PNX8550 Audio Out 1");
 	printk(KERN_INFO "pnx8550ao1: %s driver buf1=%08x buf2=%08x\n",
 			card->longname, chip->buf1_dma, chip->buf2_dma);
+	printk(KERN_DEBUG "pnx8550ao1: buffer1=%08x buffer2=%08x\n",
+			chip->buf1_dma, chip->buf2_dma);
 
 	err = snd_card_register(card);
 	if (err < 0) {
