@@ -36,6 +36,7 @@ config SND_AU1X00
 config SND_PNX8550AO1
 	tristate "PNX8550 Audio Out 1 on STB810"
 	depends on PNX8550_STB810
+	select SND_PCM
 
 endif	# SND_MIPS
 
