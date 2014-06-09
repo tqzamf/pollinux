@@ -922,7 +922,7 @@ static int get_min_max_with_quirks(struct usb_mixer_elem_info *cval,
 		 */
 		{
 			int val;
-			get_cur_mix_value(cval, minchn, &val);
+			get_cur_mix_value(cval, minchn, 0, &val);
 			if(val > cval->max)
 			{
 				set_cur_mix_value(cval, minchn, 0, cval->max);
