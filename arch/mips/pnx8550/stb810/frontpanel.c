@@ -352,6 +352,10 @@ static void pnx8550_frontpanel_shutdown(struct platform_device *pdev)
 	// clear LEDs too
 	pnx8550_frontpanel_leds = 0;
 	pnx8550_frontpanel_update_leds();
+
+	// blank the chip. this is the easiest way to make sure the display
+	// and LEDs are off during reboot.
+	pnx8550_frontpanel_send("\x80", 1);
 }
 
 // driver initialization. uses GPIOLIB to reserve the GPIOs, but doesn't
@@ -374,6 +378,10 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_CLOCK);
 	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_STROBE);
 	
+	// clear display memory. if the driver shutdown didn't run properly,
+	// the display memory may not have been cleared.
+	pnx8550_frontpanel_shutdown(pdev);
+
 	// make sure scanning is enabled. the chip powers up that way,
 	// but may not have been reset properly on reboot.
 	pnx8550_frontpanel_send("\x40", 1);
@@ -410,6 +418,10 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 static int __devexit pnx8550_frontpanel_remove(struct platform_device *pdev)
 {
 	int *base = pdev->dev.platform_data;
+
+	// remove the LEDs
+	led_classdev_unregister(&pnx8550_frontpanel_led_upper);
+	led_classdev_unregister(&pnx8550_frontpanel_led_lower);
 
 	// clear display; we shouldn't leave debris lying around
 	pnx8550_frontpanel_shutdown(pdev);
