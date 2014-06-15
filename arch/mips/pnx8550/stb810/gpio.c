@@ -159,7 +159,7 @@ static struct platform_device frontpanel_device = {
 	.dev.platform_data	= &pnx8550_frontpanel_base,
 };
 
-static int pnx8550_smartcard_base = PNX8550_GPIO_SC1_AUX1;
+static int pnx8550_smartcard_base = PNX8550_GPIO_SC1_VCC;
 
 static struct platform_device smartcard_device = {
 	.name		= "smartcard",

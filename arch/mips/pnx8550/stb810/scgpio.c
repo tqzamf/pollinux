@@ -207,6 +207,49 @@ static struct gpio_chip pnx8550_scgpio_chip = {
 	.names            = pnx8550_scgpio_names,
 };
 
+// sets the IO voltage used for smartcard IO, either 3.0V or 5.0V.
+// shown as 3.0V and 5.0V respectively to make it clear it isn't 3.3V.
+// on store, can be abbreviated down to "3" or "5".
+static ssize_t voltage_store(struct device *dev,
+			 struct device_attribute *attr,
+			 const char *buf, size_t size)
+{
+	int i = size;
+
+	// strip any newline suffix that might be present
+	while (i >= 1 && (buf[i - 1] == '\n' || buf[i - 1] == '\r'))
+		i--;
+	// for voltage "x", we accept "x", "xV", "x.0" and "x.0V". strip the suffix.
+	if (i >= 1 && (buf[i - 1] == 'v' || buf[i - 1] == 'V'))
+		i--;
+	if (i >= 2 && buf[i - 2] == '.' && buf[i - 1] == '0')
+		i -= 2;
+	// now a single digit must be left, and it must select either 3V or 5V
+	if (i != 1)
+		return -EINVAL;
+	if (buf[0] != '3' && buf[0] != '5')
+		return -EINVAL;
+	
+	if (buf[0] == '5')
+		PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_SC1_VCC);
+	else
+		PNX8550_GPIO_SET_LOW(PNX8550_GPIO_SC1_VCC);
+
+	return size;
+}
+
+static ssize_t voltage_show(struct device *dev,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	if (PNX8550_GPIO_DATA(PNX8550_GPIO_SC1_VCC))
+		strcpy(buf, "3.0V [5.0V]\n");
+	else
+		strcpy(buf, "[3.0V] 5.0V\n");
+	return strlen(buf);
+}
+
+static DEVICE_ATTR(voltage, 0600, voltage_show, voltage_store);
 
 
 static irqreturn_t pnx8550_scgpio_int(int irq, void *dev_id)
@@ -266,9 +309,18 @@ static int __devinit pnx8550_smartcard_probe(struct platform_device *pdev)
 	int *base = pdev->dev.platform_data;
 
 	// reserve the pins. the normal GPIO driver refuses to mess with the
-	// AUX* pins to avoid upsetting (non-GPIO) smartcard operations
+	// AUX1/2 pins to avoid upsetting (non-GPIO) smartcard operations
 	gpio_request(*base + 0, "smartcard GPIO");
 	gpio_request(*base + 1, "smartcard GPIO");
+	gpio_request(*base + 2, "smartcard GPIO");
+	// make AUX1/2 pins actively driven both ways when output, to match IO.
+	// set VCC selection to push-pull too because it is output-only anyway.
+	PNX8550_GPIO_MODE_PUSHPULL(*base + 0);
+	PNX8550_GPIO_MODE_PUSHPULL(*base + 1);
+	PNX8550_GPIO_MODE_PUSHPULL(*base + 2);
+	// configure VCC to 3V initially. 3V will not damage a 5V card; the
+	// opposite might not be true.
+	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_SC1_VCC);
 	
 	// enable the Smartcard 1 module
 	PNX8550_SC1_UCR1 = PNX8550_SC1_UCR1_ENABLE;
@@ -281,14 +333,23 @@ static int __devinit pnx8550_smartcard_probe(struct platform_device *pdev)
 			     pnx8550_scgpio_chip.label, &pnx8550_scgpio_chip);
 	if (res) {
 		pnx8550_smartcard_remove(pdev);
+		printk(KERN_ERR "PNX8550 smartcard GPIO failed to reserve IRQ: %d", res);
 		return res;
 	}
 	PNX8550_SC1_RER = PNX8550_SC1_RER_PRESENCE;
 	PNX8550_SC1_INT_CLEAR = PNX8550_SC1_INT_FLAG;
 	PNX8550_SC1_INT_ENABLE = PNX8550_SC1_INT_FLAG;
+
+	res = device_create_file(&pdev->dev, &dev_attr_voltage);
+	if (res) {
+		pnx8550_smartcard_remove(pdev);
+		printk(KERN_ERR "PNX8550 smartcard GPIO failed to register sysfs files: %d\n", res);
+		return 1;
+	}
 	
 	res = gpiochip_add(&pnx8550_scgpio_chip);
 	if (res) {
+		pnx8550_smartcard_remove(pdev);
 		printk(KERN_ERR "PNX8550 smartcard GPIO failed to register: %d", res);
 		return res;
 	} else {
@@ -297,6 +358,7 @@ static int __devinit pnx8550_smartcard_probe(struct platform_device *pdev)
 		mark_output_only(PNX8550_SCGPIO_RST);
 		mark_output_only(PNX8550_SCGPIO_VCC);
 	}
+	
 	return 0;
 }
 
@@ -311,6 +373,7 @@ static int __devexit pnx8550_smartcard_remove(struct platform_device *pdev)
 	// release GPIOs
 	gpio_free(*base + 0);
 	gpio_free(*base + 1);
+	gpio_free(*base + 2);
 
 	return 0;
 }
