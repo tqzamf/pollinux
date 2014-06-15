@@ -39,10 +39,6 @@ const char *get_system_type(void)
     return "Philips PNX8550/STB810";
 }
 
-static struct resource pnx8550fb_resources = {
-	.flags		= IORESOURCE_MEM,
-};
-
 /*
  * Prom init. We read our one and only communication with the firmware.
  * Grab the amount of installed memory
@@ -50,7 +46,6 @@ static struct resource pnx8550fb_resources = {
 void __init prom_init(void)
 {
     unsigned int mem_size;
-    unsigned int fb_base;
 
     set_io_port_base(KSEG1);
     
@@ -75,30 +70,8 @@ void __init prom_init(void)
     PNX8550_TM1_POWER_CTL = PNX8550_TM_POWER_CTL_REQ_POWERDOWN;
     
     /* Determine the amount of memory installed and allocate all of that to
-     * the kernel. The only exception is the framebuffer placed right at the
-     * end of physical memory. */
+     * the kernel. Everything else, such as the framebuffer, is allocated
+     * dynamically from that pool. */
     mem_size = get_system_mem_size();
-    fb_base = mem_size - PNX8550_FRAMEBUFFER_SIZE;
-    add_memory_region(0, fb_base, BOOT_MEM_RAM);
-    add_memory_region(fb_base, PNX8550_FRAMEBUFFER_SIZE, BOOT_MEM_RESERVED);
-    
-    // set resources for framebuffer device. this is the cleanest way of
-    // passing the base address to the driver.
-    pnx8550fb_resources.start = fb_base;
-    pnx8550fb_resources.end = fb_base + PNX8550_FRAMEBUFFER_SIZE - 1;
+    add_memory_region(0, mem_size, BOOT_MEM_RAM);
 }
-
-static struct platform_device pnx8550fb_device = {
-	.name          = "pnx8550fb",
-	.id            = -1,
-	.resource      = &pnx8550fb_resources,
-	.num_resources = 1,
-};
-
-static int __init pnx8550fb_init(void)
-{
-	// cannot be called by prom_init, so do that later on
-	return platform_device_register(&pnx8550fb_device);
-}
-
-arch_initcall(pnx8550fb_init);

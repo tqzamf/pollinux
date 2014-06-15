@@ -285,6 +285,7 @@ void pnx8550fb_set_blanking(int blank)
 /* Function used to set up PAL/NTSC using the QVCP */
 static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
 {
+	outl(0x00000000, PCI_BASE | 0x10eff4);
     outl(0x03, PCI_BASE | 0x047a00);
     outl(0x0b, PCI_BASE | 0x047a04);
     outl(0x39, PCI_BASE | 0x047a18);
@@ -346,6 +347,15 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     outl(0x07e60100, PCI_BASE | 0x10e2e0);
 
     outl(0x1, PCI_BASE | 0x10e240);
+}
+
+/* Shuts down the QVCP by powering it down */
+static void pnx8550fb_shutdown_QVCP(void)
+{
+	outl(0x80000000, PCI_BASE | 0x10eff4);
+    outl(0x00, PCI_BASE | 0x047a00);
+    outl(0x00, PCI_BASE | 0x047a04);
+    outl(0x00, PCI_BASE | 0x047a18);
 }
 
 /* command to shut down the unused second video channel on the Anabel */
@@ -410,6 +420,9 @@ void pnx8550fb_setup_display(unsigned int base, int pal)
 /* Function used to shutdown the video system. */
 void pnx8550fb_shutdown_display(void)
 {
+    /* power down the QVCP */
+    pnx8550fb_shutdown_QVCP();
+
     /* Shut down the Scart switch */
     pnx8550fb_shutdown_scart();
 }

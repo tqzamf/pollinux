@@ -21,13 +21,14 @@
 #include <linux/delay.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
+#include <linux/dma-mapping.h>
 #include <framebuffer.h>
 
 #include <linux/fb.h>
 #include <linux/init.h>
 
 struct pnx8550fb_par {
-	unsigned long iobase;
+	dma_addr_t iobase;
 	void __iomem *base;
 	unsigned int size;
 	int xres;
@@ -201,30 +202,36 @@ static struct fb_ops ops = {
 	.fb_imageblit	= sys_imageblit,
 };
 
+static int pnx8550_framebuffer_remove(struct platform_device *dev);
 static int pnx8550_framebuffer_probe(struct platform_device *dev)
 {
 	int retval = -ENOMEM;
 	struct pnx8550fb_par *par;
 	struct fb_info *info;
-	struct resource *fb_res;
-	unsigned long fb_base;
-	void __iomem *fb_ptr;
-	
-	fb_res = platform_get_resource(dev, IORESOURCE_MEM, 0);
-	if (!fb_res) {
-		printk(KERN_ERR "pnx8550fb cannot find framebuffer address\n");
-		return 1;
-	}
-	fb_base = fb_res->start;
-	fb_ptr = ioremap_cachable(fb_base, PNX8550_FRAMEBUFFER_SIZE);
+	dma_addr_t fb_base;
+	void *fb_ptr;
 	
 	info = framebuffer_alloc(sizeof(struct pnx8550fb_par)
 			+ sizeof(u32) * PNX8550FB_PSEUDO_PALETTE_SIZE, &dev->dev);
 	if (!info) {
-		printk(KERN_ERR "pnx8550fb alloc failed\n");
+		printk(KERN_ERR "pnx8550fb failed to allocate device\n");
+		pnx8550_framebuffer_remove(dev);
 		return 1;
 	}
+	par = info->par;
+	par->base = NULL;
 
+	fb_ptr = dma_alloc_noncoherent(&dev->dev, PNX8550_FRAMEBUFFER_SIZE,
+					&fb_base, GFP_USER);
+	if (!fb_ptr) {
+		printk(KERN_ERR "pnx8550fb failed to allocate screen memory\n");
+		pnx8550_framebuffer_remove(dev);
+		return 1;
+	}
+	par->iobase = fb_base;
+	par->base = fb_ptr;
+	par->size = PNX8550_FRAMEBUFFER_SIZE;
+	
 	info->fbops = &ops;
 	info->var = def;
 	info->fix = fix;
@@ -232,16 +239,13 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	info->flags = FBINFO_FLAG_DEFAULT;
 
 	// set initial screen size
-	par = info->par;
-	par->iobase = fb_base;
-	par->base = fb_ptr;
-	par->size = PNX8550_FRAMEBUFFER_SIZE;
 	pnx8550fb_check_var(&info->var, info);
 	pnx8550fb_resize(info, 1);
 
 	retval = register_framebuffer(info);
 	if (retval < 0) {
 		printk(KERN_ERR "pnx8550fb failed to register: %d\n", retval);
+		pnx8550_framebuffer_remove(dev);
 		return 1;
 	}
 
@@ -250,7 +254,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 			def.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL);
 	printk(KERN_INFO "fb%d: PNX8550-STB810 %s framebuffer at 0x%08x / %08x\n",
 			info->node,
-			info->var.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL ? "PAL" : "NTSC",
+			(def.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL) ? "PAL" : "NTSC",
 			(unsigned int) fb_base, (unsigned int) fb_ptr);
 	return 0;
 }
@@ -262,10 +266,17 @@ static void pnx8550_framebuffer_shutdown(struct platform_device *dev)
 
 static int pnx8550_framebuffer_remove(struct platform_device *dev)
 {
+	struct pnx8550fb_par *par;
 	struct fb_info *info = platform_get_drvdata(dev);
 
 	if (info) {
+		par = info->par;
+
 		pnx8550_framebuffer_shutdown(dev);
+		if (par->base)
+			dma_free_noncoherent(&dev->dev, PNX8550_FRAMEBUFFER_SIZE,
+					par->base, GFP_USER);
+
 		unregister_framebuffer(info);
 		framebuffer_release(info);
 	}
