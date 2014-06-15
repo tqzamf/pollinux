@@ -209,7 +209,9 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 	printk(KERN_DEBUG "pnx8550ao1: setting %dch %dHz, format=%d\n",
 			runtime->channels, runtime->rate, runtime->format);
 
-	control = PNX8550_AO_TRANS_MODE_16 | PNX8550_AO_TRANS_MODE_STEREO;
+	control = PNX8550_AO_TRANS_MODE_16 | PNX8550_AO_TRANS_MODE_STEREO
+			| PNX8550_AO_TRANS_ENABLE;
+
 	// signed / unsigned conversion can be done in hardware.
 	// endianness can't, unfortunately.
 	switch (runtime->format) {
@@ -259,10 +261,17 @@ static int snd_pnx8550ao1_trigger(struct snd_pcm_substream *substream,
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
-		chip->control |= (PNX8550_AO_TRANS_ENABLE | PNX8550_AO_BUF_INTEN);
+		// enable interrupts; chip is already running.
+		chip->control |= PNX8550_AO_BUF_INTEN;
 		break;
 	case SNDRV_PCM_TRIGGER_STOP:
-		chip->control &= ~(PNX8550_AO_TRANS_ENABLE | PNX8550_AO_BUF_INTEN);
+		// chip must stay running, else there is noise on the output.
+		// disable its interrupts; that way the only overhead is memory
+		// bandwidth, and we have plenty of that.
+		chip->control &= ~PNX8550_AO_BUF_INTEN;
+
+		// play silence now
+		memset(chip->buffer, 0, PNX8550_AO_BUF_ALLOC);
 		break;
 	default:
 		return -EINVAL;
@@ -286,9 +295,17 @@ static int snd_pnx8550ao1_copy(struct snd_pcm_substream *substream, int channel,
                snd_pcm_uframes_t pos, void *src, snd_pcm_uframes_t count)
 {
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
+	unsigned int off, len;
 	
-	memcpy(chip->buffer + frames_to_bytes(substream->runtime, pos),
-			src, frames_to_bytes(substream->runtime, count));
+	off = frames_to_bytes(substream->runtime, pos);
+	len = frames_to_bytes(substream->runtime, count);
+	if (off + len > PNX8550_AO_BUF_ALLOC) {
+		printk(KERN_ERR "pnx8550ao1: refusing to write beyond end of buffer"
+				"(offset %d, length %d)\n", off, len);
+		return 0;
+	}
+	
+	memcpy(chip->buffer + off, src, len);
 
 	return 0;
 }
@@ -401,13 +418,16 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	PNX8550_AO_SERIAL = PNX8550_AO_SERIAL_I2S;
 	PNX8550_AO_FRAMING = PNX8550_AO_FRAMING_I2S;
 	PNX8550_AO_CFC = PNX8550_AO_CFC_I2S;
-	/* keep the chip in reset for now */
-	chip->control = PNX8550_AO_TRANS_MODE_16;
 	
 	/* setup buffer base addresses and sizes */
 	PNX8550_AO_BUF1_BASE = chip->buf1_dma;
 	PNX8550_AO_BUF2_BASE = chip->buf2_dma;
+	/* start the chip, but with interrupts disabled, and playing silence */
 	PNX8550_AO_SIZE = PNX8550_AO_SAMPLES;
+	memset(chip->buffer, 0, PNX8550_AO_BUF_ALLOC);
+	chip->control = PNX8550_AO_TRANS_MODE_16 | PNX8550_AO_TRANS_MODE_STEREO
+			| PNX8550_AO_TRANS_ENABLE;
+	PNX8550_AO_CTL = chip->control;
 	
 	err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops);
 	if (err < 0) {
