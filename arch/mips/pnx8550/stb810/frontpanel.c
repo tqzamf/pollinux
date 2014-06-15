@@ -25,12 +25,6 @@ static char* boot = "boot";
 module_param(boot, charp, 0);
 MODULE_PARM_DESC(boot, "string to display during boot");
 
-// delay of a few hundred nanoseconds to give signals time to settle.
-// most signals do well with 250ns, but strobe needs a bit longer.
-#define PIN_DELAY 300
-#define STROBE_DELAY 400
-#define SET(pin, how) PNX8550_GPIO_DATA(pin) = PNX8550_GPIO_SET_##how(pin)
-
 // sends a raw command to the chip
 static void pnx8550_frontpanel_send(unsigned char *data, int len) {
 	int i, j;
@@ -38,22 +32,15 @@ static void pnx8550_frontpanel_send(unsigned char *data, int len) {
 	for (j = 0; j < len; j++) {
 		unsigned int byte = data[j];
 		for (i = 0; i < 8; i++) {
-			if (byte & 1)
-				SET(PNX8550_GPIO_PT6955_DATA, HIGH);
-			else
-				SET(PNX8550_GPIO_PT6955_DATA, LOW);
+			PNX8550_GPIO_SET_VALUE(PNX8550_GPIO_PT6955_DATA, byte & 1);
 			byte >>= 1;
-			
-			ndelay(PIN_DELAY);
-			SET(PNX8550_GPIO_PT6955_CLOCK, HIGH);
-			ndelay(PIN_DELAY);
-			SET(PNX8550_GPIO_PT6955_CLOCK, LOW);
+			PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_CLOCK);
+			PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_CLOCK);
 		}
 	}
-	ndelay(PIN_DELAY);
-	SET(PNX8550_GPIO_PT6955_STROBE, HIGH);
-	ndelay(STROBE_DELAY);
-	SET(PNX8550_GPIO_PT6955_STROBE, LOW);
+
+	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_STROBE);
+	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_STROBE);
 }
 
 // raw cached display data. first 4 bytes are digits, 5th is the dots:
@@ -316,21 +303,19 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 	gpio_request(*base + 0, "frontpanel display");
 	gpio_request(*base + 1, "frontpanel display");
 	gpio_request(*base + 2, "frontpanel display");
-	SET(PNX8550_GPIO_PT6955_CLOCK, LOW);
-	SET(PNX8550_GPIO_PT6955_STROBE, LOW);
+	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_CLOCK);
+	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_STROBE);
+	// configure for push-pull operation to allow faster timing
+	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_DATA);
+	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_CLOCK);
+	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_STROBE);
 	
 	// make sure scanning is enabled. the chip powers up that way,
 	// but may not have been reset properly on reboot.
-	// we need to sleep here because there isn't enough code delay to
-	// allow STROBE to settle
 	pnx8550_frontpanel_send("\x40", 1);
-	ndelay(PIN_DELAY);
 	// set brightness to maximum
 	pnx8550_frontpanel_send("\x8f", 1);
-	ndelay(PIN_DELAY);
 	
-	//device_create_file(pdev->dev, &dev_attr_map_seg7);
-	//device_create_file(pdev->dev, &dev_attr_ascii);
 	res += sysfs_create_bin_file(&pdev->dev.kobj, &raw);
 	res += sysfs_create_bin_file(&pdev->dev.kobj, &charmap);
 	res += sysfs_create_bin_file(&pdev->dev.kobj, &command);
