@@ -26,6 +26,7 @@
 #include <audio.h>
 #include <linux/i2c.h>
 #include <i2c.h>
+#include <cm.h>
 
 #define I2C_ANABEL_ADDR                0x66
 #define I2C_SCART_ADDR                 0x11
@@ -286,10 +287,12 @@ void pnx8550fb_set_blanking(int blank)
 static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
 {
 	outl(0x00000000, PCI_BASE | 0x10eff4);
-    outl(0x03, PCI_BASE | 0x047a00);
-    outl(0x0b, PCI_BASE | 0x047a04);
-    outl(0x39, PCI_BASE | 0x047a18);
+    PNX8550_CM_QVCP1_MUX = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CLK_PLL;
+    PNX8550_CM_QVCP1_CTL1 = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CLK_PLL
+			| PNX8550_CM_QVCP_CLK_DIV_2;
+    PNX8550_CM_QVCP1_CTL2 = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CTL2_DIV;
 
+	// setup screen geometry
     if (pal)
     {
         outl(0x035f0137, PCI_BASE | 0x10e000);
@@ -314,14 +317,18 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
         outl(0x012F02DC, PCI_BASE | 0x10e02c);
         outl(0x00F002d0, PCI_BASE | 0x10e234);
     }
+    // configure and enable timing generator and video output
     outl(0x20050005, PCI_BASE | 0x10e020);
+    outl(0x0fc01401, PCI_BASE | 0x10e03c);
+    // disable VBI generation
     outl(0x00000000, PCI_BASE | 0x10e034);
     outl(0x00000000, PCI_BASE | 0x10e038);
-    outl(0x0fc01401, PCI_BASE | 0x10e03c);
+    // ???
     outl(0x0, PCI_BASE | 0x10e05c);
     outl(0x0, PCI_BASE | 0x10e060);
     outl(0x00130013, PCI_BASE | 0x10e070);
     outl(0x803F3F3F, PCI_BASE | 0x10e074);
+    // set layer base address and size
     outl(buffer, PCI_BASE | 0x10e200);
     outl(PNX8550_FRAMEBUFFER_STRIDE*4, PCI_BASE | 0x10e204);
     outl(PNX8550_FRAMEBUFFER_STRIDE*2, PCI_BASE | 0x10e208);
@@ -330,13 +337,17 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     outl(8, PCI_BASE | 0x10e214);
     outl(0x80000000 | (16<<16)|(0x30), PCI_BASE | 0x10e230);
     outl(PNX8550_FRAMEBUFFER_WIDTH, PCI_BASE | 0x10e2b4);
+    // ???
     outl(0xec, PCI_BASE | 0x10e2bc);
+    // set pixel format
     outl(0x20, PCI_BASE | 0x10e23c);
     outl(0x0, PCI_BASE | 0x10e238);
+    // disable chroma keying
     outl(0x0, PCI_BASE | 0x10e25c);
     outl(0x0, PCI_BASE | 0x10e26c);
     outl(0x0, PCI_BASE | 0x10e27c);
     outl(0x0, PCI_BASE | 0x10e28c);
+    // ???
     outl(0xffe7eff7, PCI_BASE | 0x10e2c4);
     outl(0xe00, PCI_BASE | 0x10e2b8);
     outl(0x100f100, PCI_BASE | 0x10e2cc);
@@ -345,17 +356,21 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     outl(0x07b60070, PCI_BASE | 0x10e2d8);
     outl(0x009d077c, PCI_BASE | 0x10e2dc);
     outl(0x07e60100, PCI_BASE | 0x10e2e0);
-
+	// enable the layer
     outl(0x1, PCI_BASE | 0x10e240);
 }
 
 /* Shuts down the QVCP by powering it down */
 static void pnx8550fb_shutdown_QVCP(void)
 {
+	// disable timing generator, and thus all layers
+    outl(0x00000004, PCI_BASE | 0x10e020);
+    // power-down
 	outl(0x80000000, PCI_BASE | 0x10eff4);
-    outl(0x00, PCI_BASE | 0x047a00);
-    outl(0x00, PCI_BASE | 0x047a04);
-    outl(0x00, PCI_BASE | 0x047a18);
+	// stop clock (safe to do for QVCP #1)
+    PNX8550_CM_QVCP1_MUX = 0;
+    PNX8550_CM_QVCP1_CTL1 = 0;
+    PNX8550_CM_QVCP1_CTL2 = 0;
 }
 
 /* command to shut down the unused second video channel on the Anabel */
@@ -394,11 +409,19 @@ static void pnx8550fb_shutdown_unused(void)
 	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error for AUDIO2\n", __func__);
 
-	// shutdown secondary QVCP
+	// disable timing generator, and thus all layers
+    outl(0x00000004, PCI_BASE | 0x10e020);
+    // power-down
 	outl(0x80000000, PCI_BASE | 0x10fff4);
-	outl(0x00, PCI_BASE | 0x047a08);
-	outl(0x00, PCI_BASE | 0x047a0c);
-	outl(0x00, PCI_BASE | 0x047a1c);
+	// we need to keep the main clock running, else any access to the module at
+	// 0x117000 completely locks up the system. there is no way to really shut
+	// down the QVCP except by stopping its clock, so we essentially have to
+	// leave it running here. however, we can reduce its clock to the minimum
+	// the PLL can output, which is 1.6875MHz.
+    PNX8550_CM_QVCP2_MUX = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CLK_PLL;
+    PNX8550_CM_PLL3_CTL = PNX8550_CM_PLL_MIN_FREQ;
+    PNX8550_CM_QVCP2_CTL1 = 0;
+    PNX8550_CM_QVCP2_CTL2 = 0;
 }
 
 /* Function used to initialise the screen. */
