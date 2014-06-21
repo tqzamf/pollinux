@@ -32,7 +32,7 @@ extern void *phStbMmio_Base;
 #define MMIO(offset) (*((volatile unsigned long*)(((unsigned long)phStbMmio_Base) + (offset)) ))
 
 #define PNX8550_GLB1_BASE	0xBBE63000
-#define PNX8550_GLB2_BASE	0xBBE4d000
+#define PNX8550_GLB2_BASE	0xBBE4D000
 #define PNX8550_RESET_BASE      0xBBE60000
 
 /* PCI Inta Output Enable Registers */

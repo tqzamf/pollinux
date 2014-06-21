@@ -39,7 +39,7 @@
 #include <int.h>
 #include <pci.h>
 #include <uart.h>
-#include <nand.h>
+#include <xio.h>
 
 extern void __init board_setup(void);
 extern void pnx8550_machine_restart(char *);
