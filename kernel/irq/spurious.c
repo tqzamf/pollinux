@@ -318,13 +318,6 @@ void note_interrupt(unsigned int irq, struct irq_desc *desc,
 		desc->depth++;
 		irq_disable(desc);
 		
-		if (irq == 55) {
-			// Our main PCI IRQ? Disabled, you say? 
-			// Everything will have gone Pete Tong so
-			// let's just give up.
-			panic("Main PCI IRQ disabled. We have no future.\n");
-		}
-
 		mod_timer(&poll_spurious_irq_timer,
 			  jiffies + POLL_SPURIOUS_IRQ_INTERVAL);
 	}
