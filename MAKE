@@ -3,11 +3,12 @@ set -e
 CROSS_COMPILE=mipsel-linux-gnu-
 export NM=${CROSS_COMPILE}nm
 export OBJCOPY=${CROSS_COMPILE}objcopy
+export MAKEFLAGS=--no-print-directory
 
 # build the kernel
 touch initramfs/initramfs.cpio
 make ARCH=mips usr
-(cd initramfs && bash mkinitramfs.sh)
+make -C initramfs initramfs.cpio
 make ARCH=mips -j10
 $OBJCOPY -O binary --remove-section=.reginfo --remove-section=.mdebug --remove-section=.comment --remove-section=.note --remove-section=.pdr --remove-section=.options --remove-section=.MIPS.options vmlinux vmlinux.bin
 

@@ -47,7 +47,7 @@ Rev Date       Author      Comments
 #include <linux/mtd/nand_ecc.h>
 #include <linux/interrupt.h>
 #include <asm/io.h>
-#include <asm/mach-pnx8550/nand.h>
+#include <asm/mach-pnx8550/xio.h>
 #include <asm/mach-pnx8550/prom.h>
 #include "../mtdcore.h"
 
@@ -941,12 +941,12 @@ static int __init pnx8550_nand_init(void)
     pNandAddr = (u16*) (KSEG1 | (PNX8550_BASE18_ADDR & (~0x7)));
 
     pNandAddr = (u16*)(((u32)pNandAddr) +
-                ((PNX8550_XIO_SEL0 & PNX8550_XIO_SEL0_OFFSET_MASK) >>
-                  PNX8550_XIO_SEL0_OFFSET_SHIFT) * 8 * 1024 * 1024);
+                ((PNX8550_XIO_SEL0 & PNX8550_XIO_SEL_OFFSET_MASK) >>
+                  PNX8550_XIO_SEL_OFFSET_SHIFT) * 8 * 1024 * 1024);
 
     if (nand_auto == 1)
     {
-        is16bit = (PNX8550_XIO_SEL0 & PNX8550_XIO_SEL0_EN_16BIT)?1:0;
+        is16bit = (PNX8550_XIO_SEL0 & PNX8550_XIO_SEL_EN_16BIT)?1:0;
         is64mb = (PNX8550_XIO_FLASH_CTRL & PNX8550_XIO_FLASH_64MB)?1:0;
         printk(KERN_INFO "Auto detected a %s 64MByte device on a %d bit bus\n",
                (is64mb?">=":"<"), (is16bit?16:8));

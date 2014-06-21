@@ -165,6 +165,12 @@
 #define PCI_ISET        0x040FEC
 #define PCI_MOD_ID      0x040FFC
 
+// main memory interface registers
+#define MMI_RANK0_LOW  0x65010
+#define MMI_RANK0_HIGH 0x65014
+#define MMI_RANK1_LOW MMI_RANK0_HIGH
+#define MMI_RANK1_HIGH 0x65018
+
 /*
  *  PCI configuration cycle AD bus definition
  */

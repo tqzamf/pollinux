@@ -24,7 +24,7 @@
 
 #include <pci.h>
 #include <glb.h>
-#include <nand.h>
+#include <xio.h>
 
 static struct resource pci_io_resource = {
 	.start	= PNX8550_PCIIO + 0x1000,	/* reserve regacy I/O space */
@@ -53,9 +53,9 @@ static struct pci_controller pnx8550_controller = {
 static inline unsigned long get_system_mem_size(void)
 {
 	/* Read IP2031_RANK0_ADDR_LO */
-	unsigned long dram_r0_lo = inl(PCI_BASE | 0x65010);
+	unsigned long dram_r0_lo = inl(PCI_BASE | MMI_RANK0_LOW);
 	/* Read IP2031_RANK1_ADDR_HI */
-	unsigned long dram_r1_hi = inl(PCI_BASE | 0x65018);
+	unsigned long dram_r1_hi = inl(PCI_BASE | MMI_RANK1_HIGH);
 
 	return dram_r1_hi - dram_r0_lo + 1;
 }

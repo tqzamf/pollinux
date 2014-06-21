@@ -39,7 +39,7 @@
 #include <int.h>
 #include <pci.h>
 #include <uart.h>
-#include <nand.h>
+#include <xio.h>
 #include <prom.h>
 
 struct resource standard_io_resources[] = {
@@ -75,9 +75,9 @@ extern struct resource pci_mem_resource;
 unsigned long get_system_mem_size(void)
 {
 	/* Read IP2031_RANK0_ADDR_LO */
-	unsigned long dram_r0_lo = inl(PCI_BASE | 0x65010);
+	unsigned long dram_r0_lo = inl(PCI_BASE | MMI_RANK0_LOW);
 	/* Read IP2031_RANK1_ADDR_HI */
-	unsigned long dram_r1_hi = inl(PCI_BASE | 0x65018);
+	unsigned long dram_r1_hi = inl(PCI_BASE | MMI_RANK1_HIGH);
 
 	return dram_r1_hi - dram_r0_lo + 1;
 }
