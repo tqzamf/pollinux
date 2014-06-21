@@ -194,6 +194,9 @@ static int cimax_devs_remove(void)
 	return 0;
 }
 
+static int cimax_send_control(char *msg);
+static char cimax_module_control[];
+
 static char cimax_irq_status_regsel = {
 	CIMAX_INT_STATUS
 };
@@ -220,6 +223,12 @@ static int cimax_irq_status(void) {
 	if (res != ARRAY_SIZE(cimax_irq_status_msg)) {
 		printk(KERN_ERR "%s: i2c read error %d\n", __func__, res);
 		return -1;
+	}
+	
+	if (cimax_irq_status_buf & CIMAX_INT_DET_A) {
+		res = cimax_send_control(cimax_module_control);
+		if (res < 0)
+			printk(KERN_ERR "%s: i2c write error %d\n", __func__, res);
 	}
 	
 	return cimax_irq_status_buf;
@@ -252,6 +261,10 @@ static int cimax_presence_status(void) {
 		printk(KERN_ERR "%s: i2c read error %d\n", __func__, res);
 		return -1;
 	}
+	
+	res = cimax_send_control(cimax_module_control);
+	if (res < 0)
+		printk(KERN_ERR "%s: i2c write error %d\n", __func__, res);
 	
 	return cimax_presence_status_buf;
 }
