@@ -117,7 +117,7 @@ static int __init pnx8550_pci_setup(void)
 	outl(PCI_EN_TA |
 	     PCI_EN_PCI2MMI |
 	     PCI_EN_XIO |
-	     PCI_SETUP_BASE18_SIZE(SIZE_64M) |
+	     PCI_SETUP_BASE18_SIZE(SIZE_128M) |
 	     PCI_SETUP_BASE18_EN |
 	     PCI_SETUP_BASE14_EN |
 	     PCI_SETUP_BASE10_PREF |

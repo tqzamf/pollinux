@@ -39,6 +39,7 @@
 #define PNX8550_GPIO_DATA(pin)       (_PNX8550_GPIO_DATA(pin) & (0x00001 << ((pin) & 15)))
 #define PNX8550_GPIO_DIR(pin)        (_PNX8550_GPIO_DATA(pin) & (0x10000 << ((pin) & 15)))
 
+#define PNX8550_GPIO_IRQSSTAT_CIMAX 8
 #define PNX8550_GPIO_STANDBY 12
 #define PNX8550_GPIO_CPU_BLUE 44
 #define PNX8550_GPIO_CPU_RED 56
