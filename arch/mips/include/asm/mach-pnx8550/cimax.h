@@ -98,5 +98,9 @@
 #define CIMAX_I2C_ADDR   0x40
 #define CIMAX_IRQ        PNX8550_INT_PCI_INTA
 #define CIMAX_IRQ_STATUS PNX8550_GPIO_DATA(PNX8550_GPIO_IRQSSTAT_CIMAX)
+// the device provides 4 block of 64k each, selected by A24/25
+#define CIMAX_NUM_BLOCKS 4
+#define CIMAX_BLOCK_SIZE 65536
+#define CIMAX_BLOCK_SEL_SHIFT 24
 
 #endif

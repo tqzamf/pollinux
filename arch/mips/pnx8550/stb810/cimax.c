@@ -1,6 +1,10 @@
 /*
  * CIMaX driver for PNX8550 STB810 board.
  * 
+ * Partially based on:
+ *   linux/drivers/char/mem.c
+ *   Copyright (C) 1991, 1992  Linus Torvalds
+ * 
  * GPLv2.
  */
 
@@ -9,42 +13,248 @@
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/i2c.h>
+#include <linux/mm.h>
+#include <linux/miscdevice.h>
+#include <linux/fs.h>
+#include <asm/page.h>
 
 #include <pci.h>
 #include <xio.h>
 #include <cimax.h>
 #include <i2c.h>
 
-//static char cimax_irq_status_regsel = {
-	//CIMAX_INT_STATUS
-//};
-//static unsigned char cimax_irq_status_buf;
-//static struct i2c_msg cimax_irq_status_msg[] = {
-	//{
-		//.addr = CIMAX_I2C_ADDR,
-		//.len = 1,
-		//.buf = &cimax_irq_status_regsel,
-	//}, {
-		//.addr = CIMAX_I2C_ADDR,
-		//.flags = I2C_M_RD,
-		//.len = 1,
-		//.buf = &cimax_irq_status_buf,
-	//}
-//};
-//static int cimax_irq_status(void) {
-	//struct i2c_adapter *adapter;
-	//int res;
+static struct miscdevice cimax_devices[CIMAX_NUM_BLOCKS];
+static int cimax_base;
+
+static ssize_t cimax_read(struct file *file, char __user *buf,
+			size_t count, loff_t *ppos)
+{
+	unsigned int rem, block, base, off;
+	char *ptr;
+
+	// block is selected by A24/25
+	block = (unsigned int) file->private_data;
+	if (block >= CIMAX_NUM_BLOCKS)
+		return -ENXIO;
+	base = cimax_base + (block << CIMAX_BLOCK_SEL_SHIFT);
+	off = *ppos;
+
+	if (off >= CIMAX_BLOCK_SIZE || count >= CIMAX_BLOCK_SIZE
+			|| off + count >= CIMAX_BLOCK_SIZE)
+		return -EFAULT;
+
+	// this really only works on MIPS, but that's true for the entire driver
+	ptr = UNCAC_ADDR(phys_to_virt(base + off));
+	rem = copy_to_user(buf, ptr, count);
+	if (rem)
+		return -EFAULT;
+
+	*ppos += count;
+	return count;
+}
+
+static ssize_t cimax_write(struct file *file, const char __user *buf,
+			 size_t count, loff_t *ppos)
+{
+	unsigned int rem, block, base, off;
+	char *ptr;
+
+	// block is selected by A24/25
+	block = (unsigned int) file->private_data;
+	if (block >= CIMAX_NUM_BLOCKS)
+		return -ENXIO;
+	base = cimax_base + (block << CIMAX_BLOCK_SEL_SHIFT);
+	off = *ppos;
+
+	if (off >= CIMAX_BLOCK_SIZE || count >= CIMAX_BLOCK_SIZE
+			|| off + count >= CIMAX_BLOCK_SIZE)
+		return -EFAULT;
+
+	// this really only works on MIPS, but that's true for the entire driver
+	ptr = UNCAC_ADDR(phys_to_virt(base + off));
+	rem = copy_from_user(ptr, buf, count);
+	if (rem)
+		return -EFAULT;
+
+	*ppos += count;
+	return count;
+}
+
+static loff_t cimax_lseek(struct file *file, loff_t offset, int orig)
+{
+	loff_t ret;
 	
-	//adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
-	//res = i2c_transfer(adapter, cimax_irq_status_msg,
-			//ARRAY_SIZE(cimax_irq_status_msg));
-	//if (res != ARRAY_SIZE(cimax_irq_status_msg)) {
-		//printk(KERN_ERR "%s: i2c write error %d\n", __func__, res);
-		//return -1;
-	//}
+	if (offset < 0)
+		return -EOVERFLOW;
+
+	mutex_lock(&file->f_path.dentry->d_inode->i_mutex);
+	switch (orig) {
+	case SEEK_CUR:
+		offset += file->f_pos;
+		break;
+	case SEEK_END:
+		offset += CIMAX_BLOCK_SIZE;
+	case SEEK_SET:
+		break;
+	default:
+		offset = -EINVAL;
+	}
+
+	if (offset >= 0 && offset < CIMAX_BLOCK_SIZE) {
+		file->f_pos = offset;
+		ret = file->f_pos;
+	} else
+		ret = -EOVERFLOW;
+	mutex_unlock(&file->f_path.dentry->d_inode->i_mutex);
+	return ret;
+}
+
+static int cimax_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	unsigned int off, base, pgstart, vsize, psize, block;
 	
-	//return cimax_irq_status_buf;
-//}
+	// block is selected by A24/25
+	block = (unsigned int) file->private_data;
+	if (block >= CIMAX_NUM_BLOCKS)
+		return -ENXIO;
+	base = cimax_base + (block << CIMAX_BLOCK_SEL_SHIFT);
+	
+	off = vma->vm_pgoff << PAGE_SHIFT;
+	pgstart = (base >> PAGE_SHIFT) + vma->vm_pgoff;
+	vsize = vma->vm_end - vma->vm_start;
+	psize = CIMAX_BLOCK_SIZE - off;
+
+	if (vsize > psize)
+		return -EINVAL; /* end is out of range */
+	
+	/* io_remap_pfn_range sets the appropriate protection flags */
+	if (remap_pfn_range(vma, vma->vm_start, pgstart, vsize,
+			    pgprot_noncached(vma->vm_page_prot)))
+		return -EAGAIN;
+	return 0;
+}
+
+static int cimax_open(struct inode *inode, struct file *file)
+{
+	unsigned int minor, i, block;
+
+	minor = iminor(inode);
+	for (i = 0; i < CIMAX_NUM_BLOCKS; i++)
+		if (cimax_devices[i].minor == minor) {
+			block = i;
+			break;
+		}
+	if (i == CIMAX_NUM_BLOCKS)
+		return -ENXIO;
+	
+	file->private_data = (void*) block;
+	
+	return 0;
+}
+
+static const struct file_operations cimax_fops = {
+	.open = cimax_open,
+	.mmap = cimax_mmap,
+	.llseek = cimax_lseek,
+	.read = cimax_read,
+	.write = cimax_write,
+};
+
+static struct miscdevice cimax_devices[CIMAX_NUM_BLOCKS] = {
+	{ .minor = MISC_DYNAMIC_MINOR, .name = "cimax-mem0", .fops = &cimax_fops },
+	{ .minor = MISC_DYNAMIC_MINOR, .name = "cimax-mem1", .fops = &cimax_fops },
+	{ .minor = MISC_DYNAMIC_MINOR, .name = "cimax-mem2", .fops = &cimax_fops },
+	{ .minor = MISC_DYNAMIC_MINOR, .name = "cimax-mem3", .fops = &cimax_fops },
+};
+
+static int cimax_devs_create(void)
+{
+	int res, i;
+	
+	for (i = 0; i < CIMAX_NUM_BLOCKS; i++) {
+		res = misc_register(&cimax_devices[i]);
+		if (res < 0)
+			break;
+	}
+	
+	if (res < 0)
+		for (; i >= 0; i--)
+			misc_deregister(&cimax_devices[i]);
+
+	return res;
+}
+
+static int cimax_devs_remove(void)
+{
+	int i;
+	
+	for (i = CIMAX_NUM_BLOCKS - 1; i >= 0; i--)
+		misc_deregister(&cimax_devices[i]);
+	
+	return 0;
+}
+
+static char cimax_irq_status_regsel = {
+	CIMAX_INT_STATUS
+};
+static unsigned char cimax_irq_status_buf;
+static struct i2c_msg cimax_irq_status_msg[] = {
+	{
+		.addr = CIMAX_I2C_ADDR,
+		.len = 1,
+		.buf = &cimax_irq_status_regsel,
+	}, {
+		.addr = CIMAX_I2C_ADDR,
+		.flags = I2C_M_RD,
+		.len = 1,
+		.buf = &cimax_irq_status_buf,
+	}
+};
+static int cimax_irq_status(void) {
+	struct i2c_adapter *adapter;
+	int res;
+	
+	adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
+	res = i2c_transfer(adapter, cimax_irq_status_msg,
+			ARRAY_SIZE(cimax_irq_status_msg));
+	if (res != ARRAY_SIZE(cimax_irq_status_msg)) {
+		printk(KERN_ERR "%s: i2c read error %d\n", __func__, res);
+		return -1;
+	}
+	
+	return cimax_irq_status_buf;
+}
+
+static char cimax_presence_status_regsel = {
+	CIMAX_MC_A
+};
+static unsigned char cimax_presence_status_buf;
+static struct i2c_msg cimax_presence_status_msg[] = {
+	{
+		.addr = CIMAX_I2C_ADDR,
+		.len = 1,
+		.buf = &cimax_presence_status_regsel,
+	}, {
+		.addr = CIMAX_I2C_ADDR,
+		.flags = I2C_M_RD,
+		.len = 1,
+		.buf = &cimax_presence_status_buf,
+	}
+};
+static int cimax_presence_status(void) {
+	struct i2c_adapter *adapter;
+	int res;
+	
+	adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
+	res = i2c_transfer(adapter, cimax_presence_status_msg,
+			ARRAY_SIZE(cimax_presence_status_msg));
+	if (res != ARRAY_SIZE(cimax_presence_status_msg)) {
+		printk(KERN_ERR "%s: i2c read error %d\n", __func__, res);
+		return -1;
+	}
+	
+	return cimax_presence_status_buf;
+}
 
 //static char[] cimax_irq_mask_data = {
 	//CIMAX_INT_MASK, 0x00
@@ -309,6 +519,49 @@ static ssize_t address_space_show(struct device *dev,
 }
 static DEVICE_ATTR(address_space, 0600, address_space_show, address_space_store);
 
+static ssize_t interrupt_show(struct device *dev,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	char status;
+	
+	status = cimax_irq_status();
+	if (status < 0)
+		return status;
+	
+	buf[0] = 0;
+	if (status & CIMAX_INT_IRQ_A)
+		strcat(buf, "irq ");
+	if (status & CIMAX_INT_DET_A)
+		strcat(buf, "presence ");
+	if (*buf) // strip the extra space
+		buf[strlen(buf) - 1] = 0;
+	strcat(buf, "\n");
+	
+	return strlen(buf);
+}
+static DEVICE_ATTR(interrupt, 0400, interrupt_show, NULL);
+
+static ssize_t presence_show(struct device *dev,
+			     struct device_attribute *attr,
+			     char *buf)
+{
+	char status;
+	
+	status = cimax_presence_status();
+	if (status < 0)
+		return status;
+	
+	buf[0] = 0;
+	if (status & CIMAX_MC_DET)
+		strcat(buf, "inserted\n");
+	else
+		strcat(buf, "ejected\n");
+	
+	return strlen(buf);
+}
+static DEVICE_ATTR(presence, 0400, presence_show, NULL);
+
 /* chip initialization commands */
 static char cimax_setup_modsel_power[] = {
 	CIMAX_DEST, CIMAX_DEST_SEL_MOD_A,
@@ -357,7 +610,7 @@ static int __devexit pnx8550_cimax_remove(struct platform_device *pdev);
 static int __devinit pnx8550_cimax_probe(struct platform_device *pdev)
 {
 	struct i2c_adapter *adapter;
-	int res, cimax_base;
+	int res;
 	
 	PNX8550_XIO_SEL1 = PNX8550_XIO_SEL_ENAB | PNX8550_XIO_SEL_SIZE_64MB
 			| PNX8550_XIO_SEL_TYPE_68360 | PNX8550_XIO_SEL_USE_ACK
@@ -391,20 +644,25 @@ static int __devinit pnx8550_cimax_probe(struct platform_device *pdev)
 	ADD_SYSFS_FILE(am_timing);
 	ADD_SYSFS_FILE(cm_timing);
 	ADD_SYSFS_FILE(address_space);
+	ADD_SYSFS_FILE(presence);
+	ADD_SYSFS_FILE(interrupt);
 	
 	cimax_base = PNX8550_BASE18_ADDR + 8*1024*1024*CIMAX_BASE_8MB;
+	res = cimax_devs_create();
+	if (res < 0) {
+		printk(KERN_ERR "%s: failed to register devices: %d\n", __func__,
+				res);
+		return res;
+	}
+
 	printk(KERN_INFO "CIMaX at %08x, i2c address %02x\n", cimax_base,
 			CIMAX_I2C_ADDR);
-	
-	// TODO register /dev/cimax
-	
 	return 0;
 }
 
 static int __devexit pnx8550_cimax_remove(struct platform_device *pdev)
 {
-	// TODO remove device
-	
+	cimax_devs_remove();
 	pnx8550_cimax_shutdown(pdev);
 	
 	return 0;
