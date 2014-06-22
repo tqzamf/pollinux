@@ -17,9 +17,13 @@
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <asm/page.h>
+#include <linux/workqueue.h>
+#include <linux/interrupt.h>
 
 #include <pci.h>
 #include <xio.h>
+#include <gpio.h>
+#include <int.h>
 #include <cimax.h>
 #include <i2c.h>
 
@@ -32,12 +36,17 @@ struct cimax_memblock {
 static struct cimax {
 	struct cimax_memblock memblock[CIMAX_NUM_BLOCKS];
 	unsigned int base;
-	int i2c_addr;
+	unsigned int irq;
+	unsigned char i2c_addr;
 	struct i2c_adapter *i2c_adapter;
 	unsigned char am_timing_sel;
 	unsigned char cm_timing_sel;
 	unsigned char power_control;
 	unsigned char module_control;
+	struct work_struct irq_work;
+	struct miscdevice irq_device;
+	wait_queue_head_t irq_queue;
+	unsigned int irq_status;
 } chip;
 
 
@@ -168,38 +177,6 @@ static const struct file_operations cimax_fops = {
 	.write = cimax_write,
 };
 
-static int cimax_devs_create(void)
-{
-	int res, i;
-	
-	for (i = 0; i < CIMAX_NUM_BLOCKS; i++) {
-		sprintf(chip.memblock[i].devname, "cimax-mem%d", i);
-		chip.memblock[i].device.name = chip.memblock[i].devname;
-		chip.memblock[i].device.minor = MISC_DYNAMIC_MINOR;
-		chip.memblock[i].device.fops = &cimax_fops;
-		
-		res = misc_register(&chip.memblock[i].device);
-		if (res < 0)
-			break;
-	}
-	
-	if (res < 0)
-		for (; i >= 0; i--)
-			misc_deregister(&chip.memblock[i].device);
-
-	return res;
-}
-
-static int cimax_devs_remove(void)
-{
-	int i;
-	
-	for (i = CIMAX_NUM_BLOCKS - 1; i >= 0; i--)
-		misc_deregister(&chip.memblock[i].device);
-	
-	return 0;
-}
-
 
 //////////////////// i2c helpers ////////////////////
 
@@ -263,34 +240,8 @@ static int cimax_set_timing(void) {
 	return cimax_write_reg(CIMAX_TIMING_A, timing);
 }
 
-static int cimax_irq_status(void) {
-	int res;
-	
-	res = cimax_read_reg(CIMAX_INT_STATUS);
-	if (res < 0)
-		return res;
-	
-	if (res & CIMAX_INT_DET_A)
-		// restore address space and high address selection
-		cimax_write_reg(CIMAX_MC_A, chip.module_control);
-	
-	return res;
-}
 
-static int cimax_presence_status(void) {
-	int res;
-	
-	res = cimax_read_reg(CIMAX_MC_A);
-	if (res < 0)
-		return res;
-	
-	if (res & CIMAX_MC_DET)
-		// restore address space and high address selection. might be
-		// necessary when the module has been removed in the meantime.
-		cimax_write_reg(CIMAX_MC_A, chip.module_control);
-	
-	return res;
-}
+//////////////////// interrupt handling ////////////////////
 
 static char cimax_irq_mask_data[] = {
 	CIMAX_INT_MASK, 0x00
@@ -335,6 +286,101 @@ static void cimax_irq_mask(void) {
 	
 	printk(KERN_ERR "cimax: failed to mask interrupts!\n");
 }
+
+static void cimax_irq_work(struct work_struct *work)
+{
+	int status;
+	
+	// mask the IRQ at chip level and re-enable it globally
+	cimax_irq_mask();
+	enable_irq(chip.irq);
+		
+	status = cimax_read_reg(CIMAX_INT_STATUS);
+	if (status < 0) {
+		printk(KERN_ERR "cimax: error %d reading irq status; "
+				"interrupts disabled\n", status);
+		return;
+	}
+	
+	if (status & CIMAX_INT_DET_A)
+		// restore address space and high address selection. this only
+		// works then the interrupt was due to a module insertion, rather
+		// than a removal, but it's faster than checking what actually
+		// happend.
+		cimax_write_reg(CIMAX_MC_A, chip.module_control);
+	// reading the register above cleared any pending detection interrupt,
+	// so when it is set at this point, someone was really fast with
+	// ejecting and re-inserting the module.
+	if (status & CIMAX_INT_IRQ_A)
+		// IRQ is asserted, so we can only re-enable module detection
+		cimax_write_reg(CIMAX_INT_MASK, CIMAX_INT_DET_A);
+	else
+		// IRQ is clear, so we can re-enable both interrupts
+		cimax_write_reg(CIMAX_INT_MASK, CIMAX_INT_DET_A | CIMAX_INT_IRQ_A);
+	
+	// report IRQ to userspace
+	chip.irq_status = status;
+	wake_up_interruptible(&chip.irq_queue);
+}
+
+static irqreturn_t cimax_isr(int irq, void *dev_id)
+{
+	if (PNX8550_GPIO_DATA(PNX8550_GPIO_IRQSSTAT_CIMAX))
+		// wasn't us; next handler, please!
+		return IRQ_NONE;
+
+	// disable the IRQ and schedule work to mask it at the chip level
+	schedule_work(&chip.irq_work);
+	disable_irq_nosync(chip.irq);
+	return IRQ_HANDLED;
+}
+
+static ssize_t cimax_int_read(struct file *file, char __user *buf,
+			size_t count, loff_t *ppos)
+{
+	int status;
+	
+	// blindly unmask the IRQ and wait for it to trigger. wasteful, but
+	// effective and, most importantly, free of race conditions.
+	chip.irq_status = 0;
+	cimax_write_reg(CIMAX_INT_MASK, CIMAX_INT_DET_A | CIMAX_INT_IRQ_A);
+	wait_event_interruptible(chip.irq_queue,
+			(status = chip.irq_status) != 0);
+	
+	if (status & CIMAX_INT_DET_A) {
+		if (count > 9)
+			count = 9;
+		copy_to_user(buf, "presence\n", count);
+	} else { // CIMAX_INT_IRQ_A, because status != 0
+		if (count > 4)
+			count = 4;
+		copy_to_user(buf, "irq\n", count);
+	}
+	return count;
+}
+
+static int cimax_int_open(struct inode *inode, struct file *file)
+{
+	if (file->f_flags & O_NONBLOCK)
+		return -EINVAL;
+	//file->private_data = (void *) chip.last_det;
+	// interrupt will be unmasked when we read from the device for the
+	// first time, so there is nothing to do here.
+	return 0;
+}
+
+static int cimax_int_release(struct inode *inode, struct file *file)
+{
+	// if the interrupt is still enabled, it will be masked when it
+	// occurs. no reason to mask it here.
+	return 0;
+}
+
+static const struct file_operations cimax_int_fops = {
+	.open = cimax_int_open,
+	.release = cimax_int_release,
+	.read = cimax_int_read,
+};
 
 
 //////////////////// sysfs control interface ////////////////////
@@ -572,36 +618,13 @@ static ssize_t address_space_show(struct device *dev,
 }
 static DEVICE_ATTR(address_space, 0600, address_space_show, address_space_store);
 
-static ssize_t interrupt_show(struct device *dev,
-			     struct device_attribute *attr,
-			     char *buf)
-{
-	char status;
-	
-	status = cimax_irq_status();
-	if (status < 0)
-		return status;
-	
-	buf[0] = 0;
-	if (status & CIMAX_INT_IRQ_A)
-		strcat(buf, "irq ");
-	if (status & CIMAX_INT_DET_A)
-		strcat(buf, "presence ");
-	if (*buf) // strip the extra space
-		buf[strlen(buf) - 1] = 0;
-	strcat(buf, "\n");
-	
-	return strlen(buf);
-}
-static DEVICE_ATTR(interrupt, 0400, interrupt_show, NULL);
-
 static ssize_t presence_show(struct device *dev,
 			     struct device_attribute *attr,
 			     char *buf)
 {
 	char status;
 	
-	status = cimax_presence_status();
+	status = cimax_read_reg(CIMAX_MC_A);
 	if (status < 0)
 		return status;
 	
@@ -615,7 +638,47 @@ static ssize_t presence_show(struct device *dev,
 }
 static DEVICE_ATTR(presence, 0400, presence_show, NULL);
 
+
 //////////////////// driver initialization and shutdown ////////////////////
+
+static int cimax_devs_create(void)
+{
+	int res, i;
+	
+	for (i = 0; i < CIMAX_NUM_BLOCKS; i++) {
+		sprintf(chip.memblock[i].devname, "cimax-mem%d", i);
+		chip.memblock[i].device.name = chip.memblock[i].devname;
+		chip.memblock[i].device.minor = MISC_DYNAMIC_MINOR;
+		chip.memblock[i].device.fops = &cimax_fops;
+		
+		res = misc_register(&chip.memblock[i].device);
+		if (res != 0)
+			break;
+	}
+	if (res == 0) {
+		chip.irq_device.name = "cimax-interrupt";
+		chip.irq_device.minor = MISC_DYNAMIC_MINOR;
+		chip.irq_device.fops = &cimax_int_fops;
+		res = misc_register(&chip.irq_device);
+	}
+		
+	if (res != 0)
+		for (; i >= 0; i--)
+			misc_deregister(&chip.memblock[i].device);
+
+	return res;
+}
+
+static int cimax_devs_remove(void)
+{
+	int i;
+	
+	for (i = CIMAX_NUM_BLOCKS - 1; i >= 0; i--)
+		misc_deregister(&chip.memblock[i].device);
+	misc_deregister(&chip.irq_device);
+	
+	return 0;
+}
 
 #define CHECK(x) { \
 	int res = x; \
@@ -653,6 +716,10 @@ static int cimax_setup(void) {
 	chip.module_control = CIMAX_MC_HAD | CIMAX_MC_ACS_AM;
 	CHECK(cimax_write_reg(CIMAX_MC_A, chip.module_control));
 	
+	// enable interrupts
+	CHECK(cimax_write_reg(CIMAX_INT_MASK, CIMAX_INT_DET_A
+			| CIMAX_INT_IRQ_A));
+	
 	return 0;
 }
 
@@ -686,7 +753,7 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 			| PNX8550_XIO_SEL_TYPE_68360 | PNX8550_XIO_SEL_USE_ACK
 			| (CIMAX_OFFSET_MB / 8) * PNX8550_XIO_SEL_OFFSET;
 	chip.base = PNX8550_BASE18_ADDR + 1024*1024*CIMAX_OFFSET_MB;
-
+	
 	for (i = 0; i < CIMAX_NUM_BLOCKS; i++) {
 		chip.memblock[i].addr = chip.base + (i << CIMAX_BLOCK_SEL_SHIFT);
 		// this trick really only works on MIPS, but that's true for the
@@ -694,13 +761,23 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 		chip.memblock[i].base = UNCAC_ADDR(phys_to_virt(chip.memblock[i].addr));
 	}
 	
+	// allocate IRQ
+	INIT_WORK(&chip.irq_work, cimax_irq_work);
+	init_waitqueue_head(&chip.irq_queue);
+	if (request_irq(CIMAX_IRQ, cimax_isr, IRQF_SHARED, "cimax", &chip)) {
+		cimax_shutdown(pdev);
+		printk(KERN_ERR "cimax: cannot allocate irq %d\n", chip.irq);
+		return -EBUSY;
+	}
+	chip.irq = CIMAX_IRQ;
+	
 	res = cimax_setup();
 	if (res < 0) {
 		printk(KERN_ERR "cimax: cannot initialize chip\n");
 		cimax_shutdown(pdev);
 		return -EIO;
 	}
-
+	
 	#define ADD_SYSFS_FILE(name) \
 		res = device_create_file(&pdev->dev, &dev_attr_##name); \
 		if (res) { \
@@ -715,7 +792,6 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 	ADD_SYSFS_FILE(cm_timing);
 	ADD_SYSFS_FILE(address_space);
 	ADD_SYSFS_FILE(presence);
-	ADD_SYSFS_FILE(interrupt);
 	
 	res = cimax_devs_create();
 	if (res < 0) {
@@ -725,14 +801,23 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 		return res;
 	}
 
-	printk(KERN_INFO "CIMaX at %08x, i2c address %02x\n", chip.base,
-			chip.i2c_addr);
+	printk(KERN_INFO "CIMaX at %08x, i2c address %02x, irq %d\n",
+			chip.base, chip.i2c_addr, chip.irq);
 	return 0;
 }
 
 static int __devexit cimax_remove(struct platform_device *pdev)
 {
 	cimax_shutdown(pdev);
+
+	// release IRQ if necessary
+	if (chip.irq) {
+		free_irq(chip.irq, &chip);
+		// re-enable IRQ, in case that's necessary
+		cancel_work_sync(&chip.irq_work);
+		enable_irq(chip.irq);
+	}
+
 	cimax_devs_remove();
 	return 0;
 }
