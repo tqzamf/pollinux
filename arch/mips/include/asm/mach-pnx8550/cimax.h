@@ -21,6 +21,7 @@
 #define CIMAX_MC_TSOEN       0x40
 #define CIMAX_MC_TSIEN       0x20
 #define CIMAX_MC_HAD         0x10
+#define CIMAX_MC_ACS_MASK    0x0C
 #define CIMAX_MC_ACS_AM      0x00
 #define CIMAX_MC_ACS_IO      0x04
 #define CIMAX_MC_ACS_CM      0x08
@@ -92,9 +93,9 @@
     #define CIMAX_ACK_OD      0x00
     #define CIMAX_ACK_PP      0x02
 
-// base address relative to XIO base, in units of 8MB.
-// place the CIMaX right after flash: 8MBx8=64MB
-#define CIMAX_BASE_8MB   8
+// base address relative to XIO base, in units of 1MB.
+// place the CIMaX right after flash at +64MB
+#define CIMAX_OFFSET_MB   64
 #define CIMAX_I2C_ADDR   0x40
 #define CIMAX_IRQ        PNX8550_INT_PCI_INTA
 #define CIMAX_IRQ_STATUS PNX8550_GPIO_DATA(PNX8550_GPIO_IRQSSTAT_CIMAX)
