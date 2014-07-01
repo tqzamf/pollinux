@@ -410,7 +410,7 @@ static void pnx8550fb_shutdown_unused(void)
 		printk(KERN_ERR "%s: write error for AUDIO2\n", __func__);
 
 	// disable timing generator, and thus all layers
-    outl(0x00000004, PCI_BASE | 0x10e020);
+    outl(0x00000004, PCI_BASE | 0x10f020);
     // power-down
 	outl(0x80000000, PCI_BASE | 0x10fff4);
 	// we need to keep the main clock running, else any access to the module at

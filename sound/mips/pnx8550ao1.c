@@ -350,7 +350,7 @@ static int snd_pnx8550ao1_free(struct snd_pnx8550ao1 *chip)
 	pnx8550fb_set_volume(0);
 	
 	/* reset interface and disable transmission */
-	PNX8550_AO_STATUS = PNX8550_AO_RESET;
+	PNX8550_AO_CTL = PNX8550_AO_RESET;
 
 	/* release IRQ */
 	free_irq(PNX8550_AO_IRQ, chip);
@@ -399,7 +399,7 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	chip->buf2_dma = chip->buf1_dma + PNX8550_AO_BUF_SIZE;
 
 	/* reset interface and disable transmission for the time being */
-	PNX8550_AO_STATUS = PNX8550_AO_RESET;
+	PNX8550_AO_CTL = PNX8550_AO_RESET;
 
 	/* allocate IRQ */
 	if (request_irq(PNX8550_AO_IRQ, snd_pnx8550ao1_isr, 0,
