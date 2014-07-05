@@ -412,14 +412,11 @@ static void pnx8550fb_shutdown_unused(void)
 	// disable timing generator, and thus all layers
     outl(0x00000004, PCI_BASE | 0x10f020);
     // power-down
-	outl(0x80000000, PCI_BASE | 0x10fff4);
-	// we need to keep the main clock running, else any access to the module at
-	// 0x117000 completely locks up the system. there is no way to really shut
-	// down the QVCP except by stopping its clock, so we essentially have to
-	// leave it running here. however, we can reduce its clock to the minimum
-	// the PLL can output, which is 1.6875MHz.
-    PNX8550_CM_QVCP2_MUX = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CLK_PLL;
-    PNX8550_CM_PLL3_CTL = PNX8550_CM_PLL_MIN_FREQ;
+    outl(0x80000000, PCI_BASE | 0x10fff4);
+    // Stop the clock to the QVCP #2 to shut it down completely.
+    // WARNING: Stopping the clock means that any access to the module at
+    // MMIO offset 0x117000 will completely lock up the system!!
+    PNX8550_CM_QVCP2_MUX = 0;
     PNX8550_CM_QVCP2_CTL1 = 0;
     PNX8550_CM_QVCP2_CTL2 = 0;
 }

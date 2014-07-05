@@ -92,17 +92,14 @@ static int __init pnx8550_tm_powerdown(void)
     PNX8550_TM1_POWER_CTL = PNX8550_TM_POWER_CTL_REQ_POWERDOWN;
 
     /* As soon as the TriMedias have been powered down, remove their clocks as
-     * well. These are 270MHz clocks, so removing them down might save a bit of
+     * well. These are 270MHz clocks, so removing them might save quite a bit of
      * power.
-     * We cannot shut them down completely, else any access to the modules will
-     * completely hang the system, but we can reduce it to the minimum the PLL
-     * can output, which is 1.6875MHz. */
+     * WARNING: Stopping the clock means that any access to the modules will
+     * completely hang the system!! */
     while (!(PNX8550_TM0_POWER_STATUS & PNX8550_TM_POWER_CTL_ACK_POWERDOWN));
-    PNX8550_CM_TM0_CTL = PNX8550_CM_TM_CLK_ENABLE | PNX8550_CM_TM_CLK_PLL;
-    PNX8550_CM_PLL1_CTL = PNX8550_CM_PLL_MIN_FREQ;
+    PNX8550_CM_TM0_CTL = 0;
     while (!(PNX8550_TM1_POWER_STATUS & PNX8550_TM_POWER_CTL_ACK_POWERDOWN));
-    PNX8550_CM_TM1_CTL = PNX8550_CM_TM_CLK_ENABLE | PNX8550_CM_TM_CLK_PLL;
-    PNX8550_CM_PLL6_CTL = PNX8550_CM_PLL_MIN_FREQ;
+    PNX8550_CM_TM1_CTL = 0;
     
     return 0;
 }
