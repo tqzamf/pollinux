@@ -31,7 +31,7 @@ struct cimax_memblock {
 	unsigned int addr;
 	char *base;
 	struct miscdevice device;
-	char devname[12]; // need 11; using 12 for alignment
+	char devname[16];
 };
 static struct cimax {
 	struct cimax_memblock memblock[CIMAX_NUM_BLOCKS];
@@ -143,7 +143,9 @@ static int cimax_mmap(struct file *file, struct vm_area_struct *vma)
 	if (vsize > psize)
 		return -EINVAL; /* end is out of range */
 	
-	/* io_remap_pfn_range sets the appropriate protection flags */
+	/* remap_pfn_range sets the appropriate protection flags, but
+	 * stupidly allows expanding... */
+	vma->vm_flags |= VM_DONTEXPAND;
 	if (remap_pfn_range(vma, vma->vm_start, pgstart, vsize,
 			    pgprot_noncached(vma->vm_page_prot)))
 		return -EAGAIN;
@@ -646,7 +648,7 @@ static int cimax_devs_create(void)
 	int res, i;
 	
 	for (i = 0; i < CIMAX_NUM_BLOCKS; i++) {
-		sprintf(chip.memblock[i].devname, "cimax-mem%d", i);
+		sprintf(chip.memblock[i].devname, "cimax-memblock%d", i);
 		chip.memblock[i].device.name = chip.memblock[i].devname;
 		chip.memblock[i].device.minor = MISC_DYNAMIC_MINOR;
 		chip.memblock[i].device.fops = &cimax_fops;

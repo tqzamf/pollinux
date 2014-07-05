@@ -237,6 +237,7 @@ static int snd_pnx8550ao1_mmap(struct snd_pcm_substream *substream,
 	if (vsize > psize)
 		return -EINVAL; /* end is out of range */
 	
+	vma->vm_flags |= VM_DONTEXPAND;
 	if (remap_pfn_range(vma, vma->vm_start, pgstart, vsize,
 			    pgprot_noncached(vma->vm_page_prot)))
 		return -EAGAIN;
