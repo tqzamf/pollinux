@@ -27,7 +27,6 @@ Rev Date        Author        Comments
 Standard include files:
 -------------------------------------------------------------------------------
 */
-#define DEBUG
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -184,7 +183,7 @@ static __inline void DISABLE_I2C_INTERRUPT(struct I2cBusObject * a)
         WRITE_IP3203_INT_ENABLE(a, 0);
 }
 
-static int i2c_debug = 7;
+static const int i2c_debug = 7;
 /* ----- global defines ----------------------------------------------- */
 #define DEB(x) if (i2c_debug>=1) x
 #define DEB2(x) if (i2c_debug>=2) x
@@ -215,8 +214,6 @@ static void __inline local_memcpy_receive( void *dest, void *src, int len ); /* 
 #define div_DmaBufSize 128
 
 static struct I2cBusObject ip3203_i2cbus[NR_I2C_DEVICES];
-
-//static int i2c_debug = 0;
 
 
 /* This function is called from Primary ISR */

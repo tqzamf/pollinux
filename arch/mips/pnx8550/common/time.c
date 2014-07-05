@@ -82,8 +82,13 @@ static struct irqaction monotonic_irqaction = {
 };
 
 static int pnx8xxx_set_next_event(unsigned long delta,
-				struct clock_event_device *evt)
+	struct clock_event_device *evt)
 {
+	/* prevent an obscure race condition: if count advances to compare just
+	 * before the timer is cleared, the IRQ would trigger immediately,
+	 * which is completely unacceptable behavior for sleep. */
+	write_c0_count(0);
+	/* this also clears the IRQ. */
 	write_c0_compare(delta);
 	/* count might be past compare already, especially if delta is short.
 	 * we could try to detect that, but then we can just reset the timer
@@ -118,6 +123,21 @@ __init void plat_time_init(void)
 	unsigned int p;
 	unsigned int pow2p;
 
+	/* Timer 1 start */
+	configPR = read_c0_config7();
+	configPR &= ~0x00000008;
+	write_c0_config7(configPR);
+
+	/* Timer 2 start */
+	configPR = read_c0_config7();
+	configPR &= ~0x00000010;
+	write_c0_config7(configPR);
+
+	/* Timer 3 stop */
+	configPR = read_c0_config7();
+	configPR |= 0x00000020;
+	write_c0_config7(configPR);
+
 	/* PLL0 sets MIPS clock (PLL1 <=> TM1, PLL6 <=> TM2, PLL5 <=> mem) */
 	/* (but only if CLK_MIPS_CTL select value [bits 3:1] is 1:  FIXME) */
 	n = (PNX8550_CM_PLL0_CTL & PNX8550_CM_PLL_N_MASK) >> 16;
@@ -139,21 +159,6 @@ __init void plat_time_init(void)
 	pnx8xxx_clockevent.max_delta_ns = clockevent_delta2ns(0x7fffffff, &pnx8xxx_clockevent);
 	pnx8xxx_clockevent.min_delta_ns = clockevent_delta2ns(0x300, &pnx8xxx_clockevent);
 
-	/* Timer 1 start */
-	configPR = read_c0_config7();
-	configPR &= ~0x00000008;
-	write_c0_config7(configPR);
-
-	/* Timer 2 start */
-	configPR = read_c0_config7();
-	configPR &= ~0x00000010;
-	write_c0_config7(configPR);
-
-	/* Timer 3 stop */
-	configPR = read_c0_config7();
-	configPR |= 0x00000020;
-	write_c0_config7(configPR);
-
 	/* Setup Timer 1. We clear the timer after setting compare because if
 	 * count > compare, the next jiffy will delayed by ~16 seconds. The
 	 * downside is that the first jiffy might happen immediatelly -- which
@@ -169,7 +174,7 @@ __init void plat_time_init(void)
 	setup_irq(PNX8550_INT_TIMER1, &pnx8xxx_timer_irq);
 	setup_irq(PNX8550_INT_TIMER2, &monotonic_irqaction);
 
-	/* register devices */
+	/* register devices. cannot do that before calculating timing parameters! */
 	clocksource_register_hz(&pnx_clocksource, mips_hpt_frequency);
 	clockevents_register_device(&pnx8xxx_clockevent);
 	printk(KERN_INFO "pnx8xxx_clockevent mips_hpt_frequency=%u mult=%u shift=%u\n",
