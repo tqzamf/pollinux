@@ -190,13 +190,55 @@ static int snd_pnx8550ao1_close(struct snd_pcm_substream *substream)
 static int snd_pnx8550ao1_hw_params(struct snd_pcm_substream *substream,
 					struct snd_pcm_hw_params *hw_params)
 {
-	return snd_pcm_lib_alloc_vmalloc_buffer(substream,
-						params_buffer_bytes(hw_params));
+	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
+	struct snd_pcm_runtime *runtime = substream->runtime;
+	int size = params_buffer_bytes(hw_params);
+		   
+	if (!runtime)
+		return -EINVAL;
+
+	// we're not too flexible ;)
+	if (size != 2*PNX8550_AO_BUF_SIZE) {
+		printk(KERN_ERR "pnx8550ao1: attempt to allocate a %d byte buffer,"
+				" but we need %d\n", size, 2*PNX8550_AO_BUF_SIZE);
+		return -EINVAL;
+	}
+	runtime->dma_area = chip->buffer;
+	runtime->dma_addr = chip->buf1_dma;
+	runtime->dma_bytes = PNX8550_AO_BUF_ALLOC;
+	return 0;
 }
 
 static int snd_pnx8550ao1_hw_free(struct snd_pcm_substream *substream)
 {
-	return snd_pcm_lib_free_vmalloc_buffer(substream);
+	struct snd_pcm_runtime *runtime = substream->runtime;
+
+	if (!runtime)
+		return -EINVAL;
+
+	runtime->dma_area = NULL;
+	runtime->dma_addr = 0;
+	runtime->dma_bytes = 0;
+	return 0;
+}
+
+static int snd_pnx8550ao1_mmap(struct snd_pcm_substream *substream,
+		struct vm_area_struct *vma)
+{
+	unsigned int pgstart, off, vsize, psize;
+	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
+	
+	off = vma->vm_pgoff << PAGE_SHIFT;
+	pgstart = (chip->buf1_dma >> PAGE_SHIFT) + vma->vm_pgoff;
+	vsize = vma->vm_end - vma->vm_start;
+	psize = PNX8550_AO_BUF_ALLOC - off;
+	if (vsize > psize)
+		return -EINVAL; /* end is out of range */
+	
+	if (remap_pfn_range(vma, vma->vm_start, pgstart, vsize,
+			    pgprot_noncached(vma->vm_page_prot)))
+		return -EAGAIN;
+	return 0;
 }
 
 static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
@@ -291,25 +333,6 @@ snd_pnx8550ao1_pointer(struct snd_pcm_substream *substream)
 	return chip->ptr;
 }
 
-static int snd_pnx8550ao1_copy(struct snd_pcm_substream *substream, int channel,
-               snd_pcm_uframes_t pos, void *src, snd_pcm_uframes_t count)
-{
-	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
-	unsigned int off, len;
-	
-	off = frames_to_bytes(substream->runtime, pos);
-	len = frames_to_bytes(substream->runtime, count);
-	if (off + len > PNX8550_AO_BUF_ALLOC) {
-		printk(KERN_ERR "pnx8550ao1: refusing to write beyond end of buffer"
-				"(offset %d, length %d)\n", off, len);
-		return 0;
-	}
-	
-	memcpy(chip->buffer + off, src, len);
-
-	return 0;
-}
-
 static struct snd_pcm_ops snd_pnx8550ao1_playback_ops = {
 	.open =        snd_pnx8550ao1_open,
 	.close =       snd_pnx8550ao1_close,
@@ -319,9 +342,7 @@ static struct snd_pcm_ops snd_pnx8550ao1_playback_ops = {
 	.prepare =     snd_pnx8550ao1_prepare,
 	.trigger =     snd_pnx8550ao1_trigger,
 	.pointer =     snd_pnx8550ao1_pointer,
-	.copy =        snd_pnx8550ao1_copy,
-	.page =        snd_pcm_lib_get_vmalloc_page,
-	.mmap =        snd_pcm_lib_mmap_vmalloc,
+	.mmap =        snd_pnx8550ao1_mmap,
 };
 
 static int __devinit snd_pnx8550ao1_new_pcm(struct snd_pnx8550ao1 *chip)
@@ -349,9 +370,10 @@ static int snd_pnx8550ao1_free(struct snd_pnx8550ao1 *chip)
 	// mute the volume; there can be noise on the outputs otherwise
 	pnx8550fb_set_volume(0);
 	
-	/* reset interface and disable transmission */
-	PNX8550_AO_CTL = PNX8550_AO_RESET;
-
+	/* clear and disable interrupts, and disable transmission */
+	PNX8550_AO_CTL = PNX8550_AO_UDR | PNX8550_AO_BUF1 | PNX8550_AO_BUF2
+			| PNX8550_AO_HBE;
+	
 	/* release IRQ */
 	free_irq(PNX8550_AO_IRQ, chip);
 
@@ -398,8 +420,10 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	}
 	chip->buf2_dma = chip->buf1_dma + PNX8550_AO_BUF_SIZE;
 
-	/* reset interface and disable transmission for the time being */
-	PNX8550_AO_CTL = PNX8550_AO_RESET;
+	/* clear and disable interrupts, and disable transmission, so the
+	* hardware doesn't interfere with proper initialization. */
+	PNX8550_AO_CTL = PNX8550_AO_UDR | PNX8550_AO_BUF1 | PNX8550_AO_BUF2
+			| PNX8550_AO_HBE;
 
 	/* allocate IRQ */
 	if (request_irq(PNX8550_AO_IRQ, snd_pnx8550ao1_isr, 0,
