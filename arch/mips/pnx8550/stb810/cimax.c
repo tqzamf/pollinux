@@ -19,6 +19,7 @@
 #include <asm/page.h>
 #include <linux/workqueue.h>
 #include <linux/interrupt.h>
+#include <linux/kthread.h>
 
 #include <pci.h>
 #include <xio.h>
@@ -43,11 +44,19 @@ static struct cimax {
 	unsigned char cm_timing_sel;
 	unsigned char power_control;
 	unsigned char module_control;
-	struct work_struct irq_work;
-	struct miscdevice irq_device;
-	wait_queue_head_t irq_queue;
-	unsigned int irq_status;
+	unsigned int irq_masked;
+	struct task_struct *irq_unmask_thread;
+	wait_queue_head_t irq_unmask_queue;
+	struct work_struct irq_notify_work;
+	struct miscdevice interrupt_device;
+	wait_queue_head_t interrupt_queue;
+	signed int intcount_det;
+	signed int intcount_irq;
 } chip;
+struct cimax_irqstatus {
+	signed int intcount_det;
+	signed int intcount_irq;
+};
 
 
 //////////////////// memory device interface ////////////////////
@@ -289,14 +298,10 @@ static void cimax_irq_mask(void) {
 	printk(KERN_ERR "cimax: failed to mask interrupts!\n");
 }
 
-static void cimax_irq_work(struct work_struct *work)
+static void cimax_irq_notify_work(struct work_struct *work)
 {
 	int status;
 	
-	// mask the IRQ at chip level and re-enable it globally
-	cimax_irq_mask();
-	enable_irq(chip.irq);
-		
 	status = cimax_read_reg(CIMAX_INT_STATUS);
 	if (status < 0) {
 		printk(KERN_ERR "cimax: error %d reading irq status; "
@@ -321,8 +326,30 @@ static void cimax_irq_work(struct work_struct *work)
 		cimax_write_reg(CIMAX_INT_MASK, CIMAX_INT_DET_A | CIMAX_INT_IRQ_A);
 	
 	// report IRQ to userspace
-	chip.irq_status = status;
-	wake_up_interruptible(&chip.irq_queue);
+	if (status & CIMAX_INT_DET_A)
+		chip.intcount_det++;
+	if (status & CIMAX_INT_IRQ_A)
+		chip.intcount_irq++;
+	wake_up_interruptible(&chip.interrupt_queue);
+}
+
+static int cimax_irq_unmask_task(void *data)
+{
+	while (!kthread_should_stop()) {
+		// mask the IRQ at chip level and re-enable it globally
+		cimax_irq_mask();
+		enable_irq(chip.irq);
+		chip.irq_masked = 0;
+	
+		// now schedule work to notify userspace
+		schedule_work(&chip.irq_notify_work);
+
+		// wait until next event, or termination request
+		wait_event_interruptible(chip.irq_unmask_queue,
+				chip.irq_masked || kthread_should_stop());
+	}
+	
+	return 0;
 }
 
 static irqreturn_t cimax_isr(int irq, void *dev_id)
@@ -331,8 +358,9 @@ static irqreturn_t cimax_isr(int irq, void *dev_id)
 		// wasn't us; next handler, please!
 		return IRQ_NONE;
 
-	// disable the IRQ and schedule work to mask it at the chip level
-	schedule_work(&chip.irq_work);
+	// disable the IRQ and schedule task to mask it at the chip level
+	chip.irq_masked = 1;
+	wake_up_interruptible(&chip.irq_unmask_queue);
 	disable_irq_nosync(chip.irq);
 	return IRQ_HANDLED;
 }
@@ -340,32 +368,48 @@ static irqreturn_t cimax_isr(int irq, void *dev_id)
 static ssize_t cimax_int_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos)
 {
-	int status;
+	int intcount_det = 0, intcount_irq = 0;
+	struct cimax_irqstatus *info = file->private_data;
 	
-	// blindly unmask the IRQ and wait for it to trigger. wasteful, but
-	// effective and, most importantly, free of race conditions.
-	chip.irq_status = 0;
-	cimax_write_reg(CIMAX_INT_MASK, CIMAX_INT_DET_A | CIMAX_INT_IRQ_A);
-	wait_event_interruptible(chip.irq_queue,
-			(status = chip.irq_status) != 0);
+	// schedule work to check the status. this blocks if there are no
+	// pending interrupts.
+	schedule_work(&chip.irq_notify_work);
+	wait_event_interruptible(chip.interrupt_queue,
+			(intcount_det = chip.intcount_det) != info->intcount_det ||
+			(intcount_irq = chip.intcount_irq) != info->intcount_irq);
 	
-	if (status & CIMAX_INT_DET_A) {
+	if (intcount_det != info->intcount_det) {
 		if (count > 9)
 			count = 9;
 		copy_to_user(buf, "presence\n", count);
-	} else { // CIMAX_INT_IRQ_A, because status != 0
+	} else { // intcount_irq != info->intcount_irq
 		if (count > 4)
 			count = 4;
 		copy_to_user(buf, "irq\n", count);
 	}
+	// must not use chip.intcount_* else there is a race condition which
+	// can cause interrupts to get lost
+	info->intcount_det = intcount_det;
+	info->intcount_irq = intcount_irq;
 	return count;
 }
 
 static int cimax_int_open(struct inode *inode, struct file *file)
 {
+	struct cimax_irqstatus *info;
+	
 	if (file->f_flags & O_NONBLOCK)
 		return -EINVAL;
-	//file->private_data = (void *) chip.last_det;
+	
+	info = kmalloc(sizeof(struct cimax_irqstatus), GFP_KERNEL);
+	if (!info)
+		return -ENOMEM;
+	// might still trigger immediatelly, but let's at least try to
+	// avoid it.
+	info->intcount_det = chip.intcount_det;
+	info->intcount_irq = chip.intcount_irq;
+	file->private_data = (void *) info;
+	
 	// interrupt will be unmasked when we read from the device for the
 	// first time, so there is nothing to do here.
 	return 0;
@@ -373,6 +417,7 @@ static int cimax_int_open(struct inode *inode, struct file *file)
 
 static int cimax_int_release(struct inode *inode, struct file *file)
 {
+	kfree(file->private_data);
 	// if the interrupt is still enabled, it will be masked when it
 	// occurs. no reason to mask it here.
 	return 0;
@@ -658,10 +703,10 @@ static int cimax_devs_create(void)
 			break;
 	}
 	if (res == 0) {
-		chip.irq_device.name = "cimax-interrupt";
-		chip.irq_device.minor = MISC_DYNAMIC_MINOR;
-		chip.irq_device.fops = &cimax_int_fops;
-		res = misc_register(&chip.irq_device);
+		chip.interrupt_device.name = "cimax-interrupt";
+		chip.interrupt_device.minor = MISC_DYNAMIC_MINOR;
+		chip.interrupt_device.fops = &cimax_int_fops;
+		res = misc_register(&chip.interrupt_device);
 	}
 		
 	if (res != 0)
@@ -677,7 +722,7 @@ static int cimax_devs_remove(void)
 	
 	for (i = CIMAX_NUM_BLOCKS - 1; i >= 0; i--)
 		misc_deregister(&chip.memblock[i].device);
-	misc_deregister(&chip.irq_device);
+	misc_deregister(&chip.interrupt_device);
 	
 	return 0;
 }
@@ -735,11 +780,19 @@ static void cimax_shutdown(struct platform_device *pdev)
 	// instead, just turn off power to the module and disable interrupts.
 	cimax_write_reg(CIMAX_POWER, 0);
 	cimax_irq_mask();
+	
+	// stop IQR unmasking thread, if necessary
+	if (chip.irq_unmask_thread) {
+		int res = kthread_stop(chip.irq_unmask_thread);
+		if (res != 0)
+			printk(KERN_ERR "cannot stop IRQ unmask thread: %d\n", res);
+	}
 }
 
 static int __devexit cimax_remove(struct platform_device *pdev);
 static int __devinit cimax_probe(struct platform_device *pdev)
 {
+	static const struct sched_param max_prio = { .sched_priority = MAX_RT_PRIO-1 };
 	int res, i;
 	
 	chip.i2c_addr = CIMAX_I2C_ADDR;
@@ -763,9 +816,24 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 		chip.memblock[i].base = UNCAC_ADDR(phys_to_virt(chip.memblock[i].addr));
 	}
 	
+	// create IRQ unmasking kernel thread (with realtime priority)
+	init_waitqueue_head(&chip.irq_unmask_queue);
+	chip.irq_unmask_thread = kthread_create(cimax_irq_unmask_task, NULL,
+			"cimax_irqmaskd");
+	if (IS_ERR(chip.irq_unmask_thread)) {
+		res = PTR_ERR(chip.irq_unmask_thread);
+		chip.irq_unmask_thread = NULL;
+		cimax_shutdown(pdev);
+		printk(KERN_ERR "cimax: cannot create IRQ unmasking thread: %d\n",
+				res);
+		return res;
+	}
+	sched_setscheduler_nocheck(chip.irq_unmask_thread, SCHED_RR, &max_prio);
+	wake_up_process(chip.irq_unmask_thread);
+	
 	// allocate IRQ
-	INIT_WORK(&chip.irq_work, cimax_irq_work);
-	init_waitqueue_head(&chip.irq_queue);
+	INIT_WORK(&chip.irq_notify_work, cimax_irq_notify_work);
+	init_waitqueue_head(&chip.interrupt_queue);
 	if (request_irq(CIMAX_IRQ, cimax_isr, IRQF_SHARED, "cimax", &chip)) {
 		cimax_shutdown(pdev);
 		printk(KERN_ERR "cimax: cannot allocate irq %d\n", chip.irq);
@@ -816,7 +884,7 @@ static int __devexit cimax_remove(struct platform_device *pdev)
 	if (chip.irq) {
 		free_irq(chip.irq, &chip);
 		// re-enable IRQ, in case that's necessary
-		cancel_work_sync(&chip.irq_work);
+		cancel_work_sync(&chip.irq_notify_work);
 		enable_irq(chip.irq);
 	}
 
