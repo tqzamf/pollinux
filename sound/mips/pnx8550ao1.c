@@ -48,6 +48,7 @@ struct snd_pnx8550ao1 {
 	void *buffer;
 	dma_addr_t buf1_dma;
 	dma_addr_t buf2_dma;
+	snd_pcm_uframes_t samples;
 	snd_pcm_uframes_t ptr;
 	struct snd_pcm_substream *substream;
 	int volume;
@@ -125,7 +126,7 @@ static irqreturn_t snd_pnx8550ao1_isr(int irq, void *dev_id)
 	if (status & PNX8550_AO_BUF1) {
 		// buffer 1 has run empty, so we need to fill it now. tell the
 		// hardware that we already did, because that clears the interrupt.
-		chip->ptr = PNX8550_AO_SAMPLES;
+		chip->ptr = chip->samples;
 		control |= PNX8550_AO_BUF1;
 	} else if (status & PNX8550_AO_BUF2) {
 		// same for buffer 2
@@ -152,11 +153,12 @@ static irqreturn_t snd_pnx8550ao1_isr(int irq, void *dev_id)
 static struct snd_pcm_hardware snd_pnx8550ao1_hw = {
 	.info = (SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_BLOCK_TRANSFER
 			| SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID),
-	.formats =          SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_U16_LE,
+	.formats =          SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_U16_LE
+			| SNDRV_PCM_FMTBIT_S32_LE | SNDRV_PCM_FMTBIT_U32_LE,
 	.rates =            SNDRV_PCM_RATE_8000_96000 | SNDRV_PCM_RATE_CONTINUOUS,
 	.rate_min =         PNX8550_AO_RATE_MIN,
 	.rate_max =         PNX8550_AO_RATE_MAX,
-	.channels_min =     2,
+	.channels_min =     1,
 	.channels_max =     2,
 	.buffer_bytes_max = 2*PNX8550_AO_BUF_SIZE,
 	.period_bytes_min = PNX8550_AO_BUF_SIZE,
@@ -251,17 +253,44 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 	printk(KERN_DEBUG "pnx8550ao1: setting %dch %dHz, format=%d\n",
 			runtime->channels, runtime->rate, runtime->format);
 
-	control = PNX8550_AO_TRANS_MODE_16 | PNX8550_AO_TRANS_MODE_STEREO
-			| PNX8550_AO_TRANS_ENABLE;
-
+	control = PNX8550_AO_TRANS_ENABLE;
 	// signed / unsigned conversion can be done in hardware.
 	// endianness can't, unfortunately.
 	switch (runtime->format) {
 	case SNDRV_PCM_FORMAT_S16_LE:
+	case SNDRV_PCM_FORMAT_S32_LE:
 		control |= PNX8550_AO_SIGN_CONVERT_SIGNED;
 		break;
 	case SNDRV_PCM_FORMAT_U16_LE:
+	case SNDRV_PCM_FORMAT_U32_LE:
 		control |= PNX8550_AO_SIGN_CONVERT_UNSIGNED;
+		break;
+	default:
+		return -EINVAL;
+	}
+	
+	// set channels and bit depth. the audio out can do 16/32 bit, but the
+	// DAC caps that to 24bit.
+	// note: S32 stereo 96k is almost guaranteed to underrun according to
+	// the hardware docs!
+	switch (runtime->channels) {
+	case 1:
+		control |= PNX8550_AO_TRANS_MODE_MONO;
+		break;
+	case 2:
+		control |= PNX8550_AO_TRANS_MODE_STEREO;
+		break;
+	default:
+		return -EINVAL;
+	}
+	switch (runtime->format) {
+	case SNDRV_PCM_FORMAT_S16_LE:
+	case SNDRV_PCM_FORMAT_U16_LE:
+		control |= PNX8550_AO_TRANS_MODE_16;
+		break;
+	case SNDRV_PCM_FORMAT_S32_LE:
+	case SNDRV_PCM_FORMAT_U32_LE:
+		control |= PNX8550_AO_TRANS_MODE_32;
 		break;
 	default:
 		return -EINVAL;
@@ -292,7 +321,11 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 	}
 
 	chip->control = control;
+	chip->samples = bytes_to_frames(runtime, PNX8550_AO_BUF_SIZE);
 	PNX8550_AO_DDS_CTL = dds;
+	printk(KERN_DEBUG "pnx8550ao1: dds=%lu control=%08lx samples=%lu\n",
+			dds, control, chip->samples);
+
 	return 0;
 }
 
@@ -318,6 +351,7 @@ static int snd_pnx8550ao1_trigger(struct snd_pcm_substream *substream,
 	default:
 		return -EINVAL;
 	}
+	PNX8550_AO_SIZE = chip->samples;
 	PNX8550_AO_CTL = chip->control | PNX8550_AO_UDR | PNX8550_AO_HBE
 				| PNX8550_AO_BUF1 | PNX8550_AO_BUF2;
 
@@ -447,7 +481,7 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	PNX8550_AO_BUF1_BASE = chip->buf1_dma;
 	PNX8550_AO_BUF2_BASE = chip->buf2_dma;
 	/* start the chip, but with interrupts disabled, and playing silence */
-	PNX8550_AO_SIZE = PNX8550_AO_SAMPLES;
+	PNX8550_AO_SIZE = chip->samples = PNX8550_AO_SAMPLES;
 	memset(chip->buffer, 0, PNX8550_AO_BUF_ALLOC);
 	chip->control = PNX8550_AO_TRANS_MODE_16 | PNX8550_AO_TRANS_MODE_STEREO
 			| PNX8550_AO_TRANS_ENABLE;
