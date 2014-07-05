@@ -2,6 +2,7 @@
 # mount and populate pseudo-filesystems /sys, /proc, /dev and /dev/pts.
 mount -t sysfs -o nodev,noexec,nosuid sysfs /sys
 mount -t proc -o nodev,noexec,nosuid proc /proc
+mount -t debugfs -o nodev,noexec,nosuid debugfs /sys/kernel/debug
 mount -t devtmpfs dev /dev
 # make modprobe etc. happy
 mkdir -p /lib/modules/$(cut -d' ' -f3 </proc/version)
@@ -43,5 +44,5 @@ done
 # a kernel panic.
 mount -o bind /dev /root/dev
 mount -o bind /proc /root/proc
-mount -o bind /sys /root/sys
+mount -o rbind /sys /root/sys
 exec switch_root /root /sbin/init "$@"
