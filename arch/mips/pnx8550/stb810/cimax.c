@@ -336,6 +336,12 @@ static void cimax_irq_notify_work(struct work_struct *work)
 static int cimax_irq_unmask_task(void *data)
 {
 	while (!kthread_should_stop()) {
+		// wait until next event, or termination request
+		wait_event_interruptible(chip.irq_unmask_queue,
+				chip.irq_masked || kthread_should_stop());
+		if (kthread_should_stop())
+			break;
+
 		// mask the IRQ at chip level and re-enable it globally
 		cimax_irq_mask();
 		enable_irq(chip.irq);
@@ -343,10 +349,6 @@ static int cimax_irq_unmask_task(void *data)
 	
 		// now schedule work to notify userspace
 		schedule_work(&chip.irq_notify_work);
-
-		// wait until next event, or termination request
-		wait_event_interruptible(chip.irq_unmask_queue,
-				chip.irq_masked || kthread_should_stop());
 	}
 	
 	return 0;
