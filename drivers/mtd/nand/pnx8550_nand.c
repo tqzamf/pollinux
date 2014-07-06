@@ -894,30 +894,6 @@ static void pnx8550_nand_hwcontrol(struct mtd_info *mtd, int cmd, unsigned int c
    // Nothing to do here, its all done by the XIO block
 }
 
-static int part_is_safe(struct mtd_partition *part) {
-	// FlashReader and its info-block at the end of flash. protected even
-	// if the name is changed, end even from partitions merely ovrlapping
-	// it.
-	if (part->offset <= MTDPART_LOADER_END)
-		return 0;
-	if (part->offset + part->size >= MTDPART_INFO_START)
-		return 0;
-	
-	// Windows CE partitions use Microsoft OOB layout. reading them from
-	// Linux causes ECC error messages. writing them from Linux makes them
-	// unbootable.
-	if (!strncasecmp(part->name, "WinCE", strlen("WinCE")))
-		return 0;
-	
-	// the bootloader. uses WinCE-style ECC, and definitely shouldn't be
-	// overwritten accidentially. 
-	if (!strcasecmp(part->name, "U-Boot"))
-		return 0;
-	
-	// all other partitions are fine
-	return 1;
-}
-
 /*
  * Main initialization routine
  */
@@ -925,8 +901,8 @@ static int __init pnx8550_nand_init(void)
 {
     struct nand_chip *this;
     char *mtdparts;
-    int err, i, safe_parts = 0;
-    struct mtd_partition *real_parts;
+    int err, i;
+    struct mtd_partition *parts;
 
     printk(KERN_INFO "%s (%s-%s)\n", THIS_MODULE_DESCRIPTION, __DATE__, __TIME__);
 
@@ -1000,27 +976,14 @@ static int __init pnx8550_nand_init(void)
     mtdparts = strchr(prom_mtdparts, '=');
     if (mtdparts)
 		mtdpart_setup(mtdparts + 1);
-	err = parse_mtd_partitions(&pnx8550_mtd, NULL, &real_parts, NULL);
+	err = parse_mtd_partitions(&pnx8550_mtd, NULL, &parts, NULL);
 	if (err > 0) {
-		for (i = 0; i < err; i++) {
+		for (i = 0; i < err; i++)
 			// write-protect the bad block table.
-			if (!strcasecmp(real_parts[i].name, "bbt"))
-				real_parts[i].mask_flags |= MTD_WRITEABLE;
-			
-			// these partitions use WinCE ECC, which linux doesn't support.
-			// hide them to prevent error messages about uncorrectable ECC
-			// errors.
-			// also, these are the partitions that really shouldn't be
-			// written to from linux, because they will corrupt something
-			// related to the boot process.
-			if (part_is_safe(&real_parts[i]))
-				real_parts[safe_parts++] = real_parts[i];
-			else
-				printk(KERN_DEBUG "pnx8550_nand: hiding partition \"%s\"\n",
-						real_parts[i].name);
-		}
-		err = add_mtd_partitions(&pnx8550_mtd, real_parts, safe_parts);
-		kfree(real_parts);
+			if (!strcasecmp(parts[i].name, "bbt"))
+				parts[i].mask_flags |= MTD_WRITEABLE;
+		err = add_mtd_partitions(&pnx8550_mtd, parts, err);
+		kfree(parts);
 	} else if (err == 0) {
 		err = add_mtd_device(&pnx8550_mtd);
 		if (err == 1)
