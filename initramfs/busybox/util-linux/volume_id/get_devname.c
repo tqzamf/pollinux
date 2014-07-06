@@ -117,7 +117,13 @@ uuidcache_check_device(const char *device,
 	 */
 	if (major(statbuf->st_rdev) == 2)
 		return TRUE;
-
+	
+	/* MTD block device. Can contain a filesystem, but is better
+	 * selected by MTD partition name.
+	 */
+	if (major(statbuf->st_rdev) == 31)
+		return TRUE;
+	
 	add_to_uuid_cache(device);
 
 	return TRUE;
@@ -298,6 +304,76 @@ char *get_devname_from_uuid(const char *spec)
 	return NULL;
 }
 
+struct mtdblock_info {
+	unsigned int minor;
+	char *device;
+};
+
+static int FAST_FUNC
+mtdblock_check_device(const char *device,
+		struct stat *statbuf,
+		void *userData,
+		int depth UNUSED_PARAM)
+{
+	struct mtdblock_info *info = userData;
+	
+	/* mtdblock devices are block devices */
+	if (!S_ISBLK(statbuf->st_mode))
+		return TRUE;
+
+	/* not an MTD block device. */
+	if (major(statbuf->st_rdev) != 31)
+		return TRUE;
+	
+	/* is it the device we are looking for? */
+	if (minor(statbuf->st_rdev) == info->minor)
+		info->device = xstrdup(device);
+
+	return TRUE;
+}
+
+static char *
+mtdblock_find(int minor)
+{
+	struct mtdblock_info info = {
+		.minor = minor,
+		.device = NULL,
+	};
+	
+	recursive_action("/dev", ACTION_RECURSE,
+		mtdblock_check_device, /* file_action */
+		NULL, /* dir_action */
+		&info, /* userData */
+		0 /* depth */);
+
+	return info.device;
+}
+
+char *get_devname_from_mtdpart(const char *spec)
+{
+	char devname[20], partname[80];
+	unsigned int devnum = 0;
+	FILE *fp;
+
+	fp = xfopen_for_read("/proc/mtd");
+	fgets(partname, sizeof(partname), fp);    /* skip first line */
+	while (fscanf(fp, "mtd%d: %*x %*x \"%79[^\"]\"\n", &devnum, partname)
+				== 2) {
+		if (!strcmp(spec, partname)) {
+			// found the right mtd device; now find the right mtdBLOCK
+			// device. actually scan /dev for it so we can be sure it
+			// really exists when we return.
+			snprintf(devname, sizeof(devname), "/dev/mtdblock%d", devnum);
+			fclose(fp);
+			return mtdblock_find(devnum);
+		}
+	}
+	
+	// nothing found
+	fclose(fp);
+	return NULL;
+}
+
 int resolve_mount_spec(char **fsname)
 {
 	char *tmp = *fsname;
@@ -306,6 +382,8 @@ int resolve_mount_spec(char **fsname)
 		tmp = get_devname_from_uuid(*fsname + 5);
 	else if (strncmp(*fsname, "LABEL=", 6) == 0)
 		tmp = get_devname_from_label(*fsname + 6);
+	else if (strncmp(*fsname, "MTD=", 4) == 0)
+		tmp = get_devname_from_mtdpart(*fsname + 4);
 
 	if (tmp == *fsname)
 		return 0; /* no UUID= or LABEL= prefix found */
