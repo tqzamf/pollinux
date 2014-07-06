@@ -12,3 +12,5 @@ busybox.bin/*/*: busybox/busybox
 
 busybox/busybox: busybox/.config busybox/*/* busybox/*/*/* busybox/*/*/*/*
 	KCONFIG_NOTIMESTAMP=1 make -C busybox busybox
+
+.SUFFIXES:
