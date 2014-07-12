@@ -286,13 +286,22 @@ void pnx8550fb_set_blanking(int blank)
 /* Function used to set up PAL/NTSC using the QVCP */
 static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
 {
-	outl(0x00000000, PCI_BASE | 0x10eff4);
-    PNX8550_CM_QVCP1_MUX = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CLK_PLL;
-    PNX8550_CM_QVCP1_CTL1 = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CLK_PLL
-			| PNX8550_CM_QVCP_CLK_DIV_2;
-    PNX8550_CM_QVCP1_CTL2 = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CTL2_DIV;
-   
-	// setup screen geometry
+    // start PLL & DDS
+    PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_27MHZ;
+    PNX8550_CM_DDS0_CTL = PNX8550_CM_DDS_27MHZ;
+    // enable clocks
+    PNX8550_CM_QVCP1_OUT_CTL = PNX8550_CM_QVCP_CLK_ENABLE
+			| PNX8550_CM_QVCP_CLK_FCLOCK;
+    PNX8550_CM_QVCP1_PIX_CTL = PNX8550_CM_QVCP_CLK_ENABLE
+			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2;
+    // process layers at 17MHz. slow but absolutely sufficient with a
+    // single layer.
+    PNX8550_CM_QVCP1_PROC_CTL = PNX8550_CM_QVCP_CLK_ENABLE
+			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17;
+    // disable power-down mode
+    outl(0x00000000, PCI_BASE | 0x10eff4);
+
+    // setup screen geometry
     if (pal)
     {
         outl(0x035f0137, PCI_BASE | 0x10e000);
@@ -369,10 +378,11 @@ static void pnx8550fb_shutdown_QVCP(void)
     outl(0x00000004, PCI_BASE | 0x10e020);
     // power-down
 	outl(0x80000000, PCI_BASE | 0x10eff4);
-	// stop clock (safe to do for QVCP #1)
-    PNX8550_CM_QVCP1_MUX = 0;
-    PNX8550_CM_QVCP1_CTL1 = 0;
-    PNX8550_CM_QVCP1_CTL2 = 0;
+    // stop clock
+    PNX8550_CM_QVCP1_OUT_CTL = 0;
+    PNX8550_CM_QVCP1_PIX_CTL = 0;
+    PNX8550_CM_QVCP1_PROC_CTL = 0;
+    PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_POWERDOWN;
 }
 
 /* command to shut down the unused second video channel on the Anabel */
@@ -418,9 +428,10 @@ static void pnx8550fb_shutdown_unused(void)
     // Stop the clock to the QVCP #2 to shut it down completely.
     // WARNING: Stopping the clock means that any access to the module at
     // MMIO offset 0x117000 will completely lock up the system!!
-    PNX8550_CM_QVCP2_MUX = 0;
-    PNX8550_CM_QVCP2_CTL1 = 0;
-    PNX8550_CM_QVCP2_CTL2 = 0;
+    PNX8550_CM_QVCP2_OUT_CTL = 0;
+    PNX8550_CM_QVCP2_PIX_CTL = 0;
+    PNX8550_CM_QVCP2_PROC_CTL = 0;
+    PNX8550_CM_PLL3_CTL = PNX8550_CM_PLL_POWERDOWN;
 }
 
 /* Function used to initialise the screen. */
