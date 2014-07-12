@@ -29,6 +29,7 @@
 #include <asm/mach-pnx8550/glb.h>
 #include <linux/platform_device.h>
 #include <trimedia.h>
+#include <dcsn.h>
 #include <cm.h>
 #include <framebuffer.h>
 #include <prom.h>
@@ -76,6 +77,17 @@ void __init prom_init(void)
 
 static int __init pnx8550_tm_powerdown(void)
 {
+    /* Enable DCSN timeout. Without this timeout, stopping the clock to many
+     * modules means that any access to them will completely hang the system.
+     * With the timeout enabled, all that happens is a unusually long stall
+     * ending in a bus error.
+     * Using 64k cycles means long stalls on access to powered-down modules,
+     * but lowest probability of accidentally timing out too early. The latter
+     * is more important because accesses to powered-down modules should be
+     * rare. */
+    PNX8550_DCSNC_MIPS_TIMEOUT = PNX8550_DCSNC_TIMEOUT_LOG2(15);
+    PNX8550_DCSNC_TM_TIMEOUT = PNX8550_DCSNC_TIMEOUT_LOG2(15);
+	
     /* Reset the TriMedias again, just in case. It doesn't hurt to stop them,
      * it only delays execution by ~500ns. */
     PNX8550_TM0_CTL = PNX8550_TM_CTL_STOP_AND_RESET;
@@ -93,13 +105,13 @@ static int __init pnx8550_tm_powerdown(void)
 
     /* As soon as the TriMedias have been powered down, remove their clocks as
      * well. These are 270MHz clocks, so removing them might save quite a bit of
-     * power.
-     * WARNING: Stopping the clock means that any access to the modules will
-     * completely hang the system!! */
+     * power. */
     while (!(PNX8550_TM0_POWER_STATUS & PNX8550_TM_POWER_CTL_ACK_POWERDOWN));
     PNX8550_CM_TM0_CTL = 0;
+    PNX8550_CM_PLL1_CTL = PNX8550_CM_PLL_POWERDOWN;
     while (!(PNX8550_TM1_POWER_STATUS & PNX8550_TM_POWER_CTL_ACK_POWERDOWN));
     PNX8550_CM_TM1_CTL = 0;
+    PNX8550_CM_PLL6_CTL = PNX8550_CM_PLL_POWERDOWN;
     
     return 0;
 }

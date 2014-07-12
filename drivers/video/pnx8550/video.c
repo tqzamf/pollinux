@@ -426,8 +426,6 @@ static void pnx8550fb_shutdown_unused(void)
     // power-down
     outl(0x80000000, PCI_BASE | 0x10fff4);
     // Stop the clock to the QVCP #2 to shut it down completely.
-    // WARNING: Stopping the clock means that any access to the module at
-    // MMIO offset 0x117000 will completely lock up the system!!
     PNX8550_CM_QVCP2_OUT_CTL = 0;
     PNX8550_CM_QVCP2_PIX_CTL = 0;
     PNX8550_CM_QVCP2_PROC_CTL = 0;
