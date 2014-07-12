@@ -291,7 +291,7 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     PNX8550_CM_QVCP1_CTL1 = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CLK_PLL
 			| PNX8550_CM_QVCP_CLK_DIV_2;
     PNX8550_CM_QVCP1_CTL2 = PNX8550_CM_QVCP_CLK_ENABLE | PNX8550_CM_QVCP_CTL2_DIV;
-
+   
 	// setup screen geometry
     if (pal)
     {
@@ -323,9 +323,10 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     // disable VBI generation
     outl(0x00000000, PCI_BASE | 0x10e034);
     outl(0x00000000, PCI_BASE | 0x10e038);
-    // ???
+    // pedestals off
     outl(0x0, PCI_BASE | 0x10e05c);
     outl(0x0, PCI_BASE | 0x10e060);
+    // noise shaping on
     outl(0x00130013, PCI_BASE | 0x10e070);
     outl(0x803F3F3F, PCI_BASE | 0x10e074);
     // set layer base address and size
@@ -337,8 +338,6 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     outl(8, PCI_BASE | 0x10e214);
     outl(0x80000000 | (16<<16)|(0x30), PCI_BASE | 0x10e230);
     outl(PNX8550_FRAMEBUFFER_WIDTH, PCI_BASE | 0x10e2b4);
-    // ???
-    outl(0xec, PCI_BASE | 0x10e2bc);
     // set pixel format
     outl(0x20, PCI_BASE | 0x10e23c);
     outl(0x0, PCI_BASE | 0x10e238);
@@ -347,10 +346,13 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     outl(0x0, PCI_BASE | 0x10e26c);
     outl(0x0, PCI_BASE | 0x10e27c);
     outl(0x0, PCI_BASE | 0x10e28c);
-    // ???
+    // color mode = ARGB 8888
+    outl(0xec, PCI_BASE | 0x10e2bc);
     outl(0xffe7eff7, PCI_BASE | 0x10e2c4);
+    // brightness / contrast / gamma
     outl(0xe00, PCI_BASE | 0x10e2b8);
     outl(0x100f100, PCI_BASE | 0x10e2cc);
+    // matrix coefficients
     outl(0x004d0096, PCI_BASE | 0x10e2d0);
     outl(0x001d07da, PCI_BASE | 0x10e2d4);
     outl(0x07b60070, PCI_BASE | 0x10e2d8);
