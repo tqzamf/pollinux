@@ -18,6 +18,15 @@
 #include <linux/platform_device.h>
 #include <linux/leds.h>
 
+#define CMD_SET_DIGITS(num) \
+		(0x00 | ((num - 4) & 3))
+#define CMD_SET_MODE(fixedaddr, test) \
+		(0x40 | ((fixedaddr) ? 0x04 : 0x00) | ((test) ? 0x08 : 0x00))
+#define CMD_SET_DISPLAY(enable, brightness) \
+		(0x80 | ((enable) ? 0x08 : 0x00) | ((brightness) & 7))
+#define CMD_SET_ADDR(addr) \
+		(0xC0 | ((addr) & 15))
+
 static bool flip = 0;
 module_param(flip, bool, 0644);
 MODULE_PARM_DESC(flip, "correct display for panel mounted upside down");
@@ -30,18 +39,17 @@ MODULE_PARM_DESC(boot, "string to display during boot");
 static void pnx8550_frontpanel_send(unsigned char *data, int len) {
 	int i, j;
 	
+	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_STROBE);
 	for (j = 0; j < len; j++) {
 		unsigned int byte = data[j];
 		for (i = 0; i < 8; i++) {
 			PNX8550_GPIO_SET_VALUE(PNX8550_GPIO_PT6955_DATA, byte & 1);
 			byte >>= 1;
-			PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_CLOCK);
 			PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_CLOCK);
+			PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_CLOCK);
 		}
 	}
-
 	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_STROBE);
-	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_STROBE);
 }
 
 // raw cached display data (digits)
@@ -66,7 +74,7 @@ unsigned char flip_table[128] = {
 // reformat pnx8550_frontpanel_{digits,dots} into display format
 // and send it to the chip
 static void pnx8550_frontpanel_update_display(void) {
-	unsigned char buffer[8] = { 0xc0, 0, 0, 0, 0, 0, 0, 0, };
+	unsigned char buffer[8] = { CMD_SET_ADDR(0), 0, 0, 0, 0, 0, 0, 0, };
 	if (flip) {
 		buffer[1] = flip_table[pnx8550_frontpanel_digits[0] & 0x7f];
 		buffer[3] = flip_table[pnx8550_frontpanel_digits[1] & 0x7f];
@@ -99,7 +107,7 @@ static void pnx8550_frontpanel_update_display(void) {
 
 // send pnx8550_frontpanel_leds to the chip, swapping them if necessary
 static void pnx8550_frontpanel_update_leds(void) {
-	unsigned char buffer[2] = { 0xc8, 0, };
+	unsigned char buffer[2] = { CMD_SET_ADDR(8), 0, };
 	if (flip)
 		buffer[1] = pnx8550_frontpanel_leds;
 	else
@@ -108,23 +116,70 @@ static void pnx8550_frontpanel_update_leds(void) {
 }
 
 
-// brightness attribute (0..7, but it isn't visually linear)
+// brightness attribute (in 1/16 of duty cycle, but not all values are
+// supported by the hardware)
 static unsigned char pnx8550_frontpanel_brightness;
+
+// round values that the hardware doesn't support to the closest one
+static char bright_rounding[16] = {
+//  0  1  2  3  4  5  6  7   8   9   10  11  12  13  14  15
+    0, 1, 2, 4, 4, 4, 4, 10, 10, 10, 10, 11, 12, 13, 14, 14,
+};
+// commands to set the brightness (for supported values only)
+static unsigned  char bright_command[16] = {
+	CMD_SET_DISPLAY(0, 0), // blanked
+	CMD_SET_DISPLAY(1, 0), // 1/16
+	CMD_SET_DISPLAY(1, 1), // 2/16
+	CMD_SET_ADDR(0),
+	CMD_SET_DISPLAY(1, 2), // 4/16
+	CMD_SET_ADDR(0),
+	CMD_SET_ADDR(0),
+	CMD_SET_ADDR(0),
+	CMD_SET_ADDR(0),
+	CMD_SET_ADDR(0),
+	CMD_SET_DISPLAY(1, 3), // 10/16
+	CMD_SET_DISPLAY(1, 4), // 11/16
+	CMD_SET_DISPLAY(1, 5), // 12/16
+	CMD_SET_DISPLAY(1, 6), // 13/16
+	CMD_SET_DISPLAY(1, 7), // 14/16
+};
+
+static void pnx8550_frontpanel_set_brightness(int bright)
+{
+	unsigned char buffer;
+	
+	if (bright < 0)
+		bright = 0;
+	if (bright > 15)
+		bright = 15;
+
+	pnx8550_frontpanel_brightness = bright_rounding[bright];
+	buffer = bright_command[pnx8550_frontpanel_brightness];
+	pnx8550_frontpanel_send(&buffer, 1);
+}
 
 static ssize_t bright_store(struct device *dev,
 			 struct device_attribute *attr,
 			 const char *buf, size_t size)
 {
-	unsigned char buffer;
-	if (size != 1 && !(size == 2 && (buf[1] == '\n' || buf[1] == '\r')))
-		return -EINVAL;
-	buffer = buf[0] - '0';
-	if (buffer > 7 || buffer < 0)
-		return -EINVAL;
-	pnx8550_frontpanel_brightness = buffer;
+	unsigned char buffer[3] = { 0, 0, 0 };
+	unsigned long res;
+	size_t count = size;
+	int err;
 	
-	buffer |= 0x88;
-	pnx8550_frontpanel_send(&buffer, 1);
+	if (count > 0 && (buf[count - 1] == '\n' || buf[count - 1] == '\r'))
+		count--;
+	if (count > 2)
+		return -EINVAL;
+	if (count > 0)
+		buffer[0] = buf[0];
+	if (count > 1)
+		buffer[1] = buf[1];
+	err = kstrtol(buffer, 10, &res);
+	if (err)
+		return err;
+	
+	pnx8550_frontpanel_set_brightness(res);
 	return size;
 }
 
@@ -132,8 +187,8 @@ static ssize_t bright_show(struct device *dev,
 			     struct device_attribute *attr,
 			     char *buf)
 {
-	buf[0] = pnx8550_frontpanel_brightness + '0';
-	return 1;
+	sprintf(buf, "%d\n", pnx8550_frontpanel_brightness);
+	return strlen(buf);
 }
 
 static DEVICE_ATTR(brightness, 0600, bright_show, bright_store);
@@ -148,7 +203,7 @@ static ssize_t command_write(struct file *filp, struct kobject *kobj,
 		char *buf, loff_t off, size_t count)
 {
 	if (off > command.size)
-		return 0;
+		return -ENOSPC;
 	if (count + off > command.size)
 		count = command.size - off;
 	pnx8550_frontpanel_send((unsigned char *) buf, count);
@@ -171,29 +226,31 @@ static struct bin_attribute raw;
 
 static ssize_t raw_write(struct file *filp, struct kobject *kobj,
 		struct bin_attribute *attr,
-		char *buf, loff_t off, size_t count)
+		char *buf, loff_t off, size_t size)
 {
+	size_t count = size;
+	
 	if (off > raw.size)
-		return 0;
-	if (off + count > raw.size)
+		return -ENOSPC;
+	if (off + count >= raw.size)
 		count = raw.size - off;
 
 	memcpy(&pnx8550_frontpanel_digits[off], buf, count);
 	pnx8550_frontpanel_update_display();
-	return count;
+	return size;
 }
 
 static ssize_t raw_read(struct file *filp, struct kobject *kobj,
 			   struct bin_attribute *bin_attr,
-			   char *buf, loff_t off, size_t count)
+			   char *buf, loff_t off, size_t size)
 {
 	if (off > raw.size)
 		return -ENOSPC;
-	if (off + count > raw.size)
-		count = raw.size - off;
+	if (off + size >= raw.size)
+		size = raw.size - off;
 
-	memcpy(buf, &pnx8550_frontpanel_digits[off], count);
-	return count;
+	memcpy(buf, &pnx8550_frontpanel_digits[off], size);
+	return size;
 }
 
 static struct bin_attribute raw = {
@@ -215,6 +272,7 @@ static ssize_t dots_store(struct device *dev,
 {
 	int i, bit;
 
+	pnx8550_frontpanel_dots = 0;
 	for (i = 0, bit = 0x01; i < 4 && i < size; i++, bit <<= 1) {
 		if (buf[i] == '\n' || buf[i] == '\r')
 			break;
@@ -257,8 +315,8 @@ static ssize_t charmap_write(struct file *filp, struct kobject *kobj,
 		char *buf, loff_t off, size_t count)
 {
 	if (off > charmap.size)
-		return 0;
-	if (off + count > charmap.size)
+		return -ENOSPC;
+	if (off + count >= charmap.size)
 		count = charmap.size - off;
 
 	memcpy(&pnx8550_frontpanel_charmap.table[off], buf, count);
@@ -271,7 +329,7 @@ static ssize_t charmap_read(struct file *filp, struct kobject *kobj,
 {
 	if (off > charmap.size)
 		return -ENOSPC;
-	if (off + count > charmap.size)
+	if (off + count >= charmap.size)
 		count = charmap.size - off;
 
 	memcpy(buf, &pnx8550_frontpanel_charmap.table[off], count);
@@ -344,6 +402,8 @@ static void pnx8550_frontpanel_led_set(struct led_classdev *led,
 // driver shutdown. clears the display
 static void pnx8550_frontpanel_shutdown(struct platform_device *pdev)
 {
+	unsigned char blank = CMD_SET_DISPLAY(0, 0);
+	
 	// clear display at shutdown. this might be a reboot, so the chip need
 	// not be powered down immediately after
 	pnx8550_frontpanel_dots = 0;
@@ -355,8 +415,13 @@ static void pnx8550_frontpanel_shutdown(struct platform_device *pdev)
 
 	// blank the chip. this is the easiest way to make sure the display
 	// and LEDs are off during reboot.
-	pnx8550_frontpanel_send("\x80", 1);
+	pnx8550_frontpanel_send(&blank, 1);
 }
+
+static unsigned char pnx8550_frontpanel_init_commands[] = {
+	CMD_SET_DIGITS(5),
+	CMD_SET_MODE(0, 0),
+};
 
 // driver initialization. uses GPIOLIB to reserve the GPIOs, but doesn't
 // otherwise use it and accesses the hardware registers directly
@@ -371,8 +436,8 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 	gpio_request(*base + 0, "frontpanel display");
 	gpio_request(*base + 1, "frontpanel display");
 	gpio_request(*base + 2, "frontpanel display");
-	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_CLOCK);
-	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_STROBE);
+	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_CLOCK);
+	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_STROBE);
 	// configure for push-pull operation to allow faster timing
 	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_DATA);
 	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_CLOCK);
@@ -384,9 +449,10 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 
 	// make sure scanning is enabled. the chip powers up that way,
 	// but may not have been reset properly on reboot.
-	pnx8550_frontpanel_send("\x40", 1);
+	for (res = 0; res < ARRAY_SIZE(pnx8550_frontpanel_init_commands); res++)
+		pnx8550_frontpanel_send(&pnx8550_frontpanel_init_commands[res], 1);
 	// set brightness to maximum
-	pnx8550_frontpanel_send("\x8f", 1);
+	pnx8550_frontpanel_set_brightness(15);
 	
 	res = led_classdev_register(&pdev->dev, &pnx8550_frontpanel_led_upper);
 	res += led_classdev_register(&pdev->dev, &pnx8550_frontpanel_led_lower);
