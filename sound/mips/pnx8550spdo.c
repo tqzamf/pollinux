@@ -212,7 +212,6 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 	u16 *source;
 	u32 *buffer;
 	
-	//printk(KERN_DEBUG "pnx8550spdo: copy %d from %08x + %d\n", count, (u32) src, pos);
 	off = frames_to_bytes(substream->runtime, pos);
 	source = src;
 	offset = 8*pos;
@@ -224,7 +223,6 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 	}
 	
 	buffer = chip->buffer + offset;
-	//printk(KERN_DEBUG "pnx8550spdo: copy %d %08x -> %08x\n", len, (u32) source, (u32) buffer);
 	for (i = 0; i < len; i += 2*192) {
 		buffer[i + 0] = (((u32) source[i + 0]) << 12) | PNX8550_SPDO_PREAMBLE_BLOCK;
 		buffer[i + 1] = (((u32) source[i + 1]) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
@@ -232,6 +230,19 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 			buffer[i + j + 0] = (((u32) source[i + j + 0]) << 12) | PNX8550_SPDO_PREAMBLE_CHAN1;
 			buffer[i + j + 1] = (((u32) source[i + j + 1]) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
 		}
+		
+		#define SET_CHANNEL_CONTROL(channel, bit) \
+			buffer[i + 2*bit + channel] |= PNX8550_SPDO_BIT_CHSTATUS
+		// mark data stream as left/right audio with unspecified sample rate
+		SET_CHANNEL_CONTROL(0, PNX8550_SPDIF_CHANNEL_BIT(0));
+		SET_CHANNEL_CONTROL(1, PNX8550_SPDIF_CHANNEL_BIT(1));
+		SET_CHANNEL_CONTROL(0, PNX8550_SPDIF_SAMPLERATE_BIT(0));
+		SET_CHANNEL_CONTROL(1, PNX8550_SPDIF_SAMPLERATE_BIT(0));
+		// SCMS (copy protection) bullshit: try to disable copy protection
+		SET_CHANNEL_CONTROL(0, PNX8550_SPDIF_SCMS_DISABLE_BIT);
+		SET_CHANNEL_CONTROL(1, PNX8550_SPDIF_SCMS_DISABLE_BIT);
+		SET_CHANNEL_CONTROL(0, PNX8550_SPDIF_ORIGINAL_BIT);
+		SET_CHANNEL_CONTROL(1, PNX8550_SPDIF_ORIGINAL_BIT);
 	}
 
 	return 0;

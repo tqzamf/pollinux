@@ -50,6 +50,18 @@
 #define PNX8550_SPDO_BIT_USERDATA (1 << 29)
 #define PNX8550_SPDO_BIT_CHSTATUS (1 << 30)
 
+#define PNX8550_SPDIF_INTERFACE_MODE_BIT (0)
+#define PNX8550_SPDIF_DATA_MODE_BIT      (1)
+#define PNX8550_SPDIF_SCMS_DISABLE_BIT   (2)
+#define PNX8550_SPDIF_PREEMPH_BIT(x)     (((x) & 3) + 3)
+#define PNX8550_SPDIF_MODE_BIT(x)        (((x) & 1) + 6)
+#define PNX8550_SPDIF_CATEGORY_BIT(x)    (((x) & 7) + 8)
+#define PNX8550_SPDIF_ORIGINAL_BIT       (15)
+#define PNX8550_SPDIF_SOURCE_BIT(x)      (((x) & 3) + 16)
+#define PNX8550_SPDIF_CHANNEL_BIT(x)     (((x) & 3) + 20)
+#define PNX8550_SPDIF_SAMPLERATE_BIT(x)  (((x) & 3) + 24)
+#define PNX8550_SPDIF_CLOCK_BIT(x)       (((x) & 3) + 24)
+
 #define PNX8550_SPDO_BUF_VIRTUAL  3840
 #define PNX8550_SPDO_BUF_SIZE     7680
 #define PNX8550_SPDO_BUF_ALLOC    16384
