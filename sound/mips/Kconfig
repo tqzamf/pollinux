@@ -38,5 +38,10 @@ config SND_PNX8550AO1
 	depends on PNX8550_STB810
 	select SND_PCM
 
+config SND_PNX8550SPDO
+	tristate "PNX8550 SPDIF Out on STB810"
+	depends on PNX8550_STB810
+	select SND_PCM
+
 endif	# SND_MIPS
 

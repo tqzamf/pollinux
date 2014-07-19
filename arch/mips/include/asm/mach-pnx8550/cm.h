@@ -59,7 +59,8 @@
 #define PNX8550_CM_DDS9_CTL    *(volatile unsigned long *)(PNX8550_CM_BASE + 0x040)
 #define PNX8550_CM_CAB_POWERDOWN *(volatile unsigned long *)(PNX8550_CM_BASE + 0x044)
 
-// AO1 is verified, the rest is guessed
+// SPDO and AO1 are verified, the rest is guessed
+#define PNX8550_CM_SPDO_BCLK_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB00)
 #define PNX8550_CM_AI1_OSCK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB04)
 #define PNX8550_CM_AO1_OSCK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB08)
 #define PNX8550_CM_AI2_OSCK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB0C)
@@ -70,6 +71,8 @@
 #define PNX8550_CM_AO2_SCLK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB24)
 #define PNX8550_CM_AO_CLK_ENABLE 0x01
 #define PNX8550_CM_AO_CLK_FCLOCK 0x02
+#define PNX8550_CM_SPDO_CLK_ENABLE 0x01
+#define PNX8550_CM_SPDO_CLK_FCLOCK 0x02
 
 // from PNX2015 datasheet
 #define PNX8550_CM_QVCP1_OUT_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xa00)
