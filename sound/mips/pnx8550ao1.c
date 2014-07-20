@@ -51,6 +51,7 @@ struct snd_pnx8550ao1 {
 	snd_pcm_uframes_t samples;
 	snd_pcm_uframes_t ptr;
 	struct snd_pcm_substream *substream;
+	struct device *dev;
 	int volume;
 };
 
@@ -251,7 +252,7 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 	unsigned long control, dds, rem;
 	u64 rate;
 	
-	printk(KERN_DEBUG "pnx8550ao1: setting %dch %dHz, format=%d\n",
+	dev_dbg(chip->dev, "pnx8550ao1: setting %dch %dHz, format=%d\n",
 			runtime->channels, runtime->rate, runtime->format);
 
 	control = PNX8550_AO_TRANS_ENABLE;
@@ -324,7 +325,7 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 	chip->control = control;
 	chip->samples = bytes_to_frames(runtime, PNX8550_AO_BUF_SIZE);
 	PNX8550_AO_DDS_CTL = dds;
-	printk(KERN_DEBUG "pnx8550ao1: dds=%lu control=%08lx samples=%lu\n",
+	dev_dbg(chip->dev, "pnx8550ao1: dds=%lu control=%08lx samples=%lu\n",
 			dds, control, chip->samples);
 
 	return 0;
@@ -514,6 +515,7 @@ static int __devinit snd_pnx8550ao1_probe(struct platform_device *pdev)
 		return err;
 	}
 	snd_card_set_dev(card, &pdev->dev);
+	chip->dev = &pdev->dev;
 
 	err = snd_pnx8550ao1_new_pcm(chip);
 	if (err < 0) {
@@ -531,7 +533,7 @@ static int __devinit snd_pnx8550ao1_probe(struct platform_device *pdev)
 	strcpy(card->longname, "PNX8550 Audio Out 1");
 	printk(KERN_INFO "pnx8550ao1: %s driver buf1=%08x buf2=%08x\n",
 			card->longname, chip->buf1_dma, chip->buf2_dma);
-	printk(KERN_DEBUG "pnx8550ao1: buffer1=%08x buffer2=%08x\n",
+	dev_dbg(chip->dev, "pnx8550ao1: buffer1=%08x buffer2=%08x\n",
 			chip->buf1_dma, chip->buf2_dma);
 
 	err = snd_card_register(card);

@@ -50,7 +50,7 @@ struct snd_pnx8550spdo {
 	snd_pcm_uframes_t samples;
 	snd_pcm_uframes_t ptr;
 	struct snd_pcm_substream *substream;
-	int volume;
+	struct device *dev;
 	unsigned char cswl[24];
 	unsigned char cswr[24];
 };
@@ -142,7 +142,7 @@ static int snd_pnx8550spdo_hw_params(struct snd_pcm_substream *substream,
 			return -ENOMEM;
 		}
 		chip->buf2_dma = chip->buf1_dma + PNX8550_SPDO_BUF_SIZE;
-		printk(KERN_DEBUG "pnx8550spdo: buffer1=%08x buffer2=%08x\n",
+		dev_dbg(chip->dev, "pnx8550spdo: buffer1=%08x buffer2=%08x\n",
 				chip->buf1_dma, chip->buf2_dma);
 
 		/* setup buffer base addresses and sizes */
@@ -179,7 +179,7 @@ static int snd_pnx8550spdo_prepare(struct snd_pcm_substream *substream)
 	unsigned long dds, rem, size, fscode, wlen;
 	u64 rate;
 	
-	printk(KERN_DEBUG "pnx8550spdo: setting %dch %dHz, format=%d\n",
+	dev_dbg(chip->dev, "pnx8550spdo: setting %dch %dHz, format=%d\n",
 			runtime->channels, runtime->rate, runtime->format);
 	
 	switch (runtime->format) {
@@ -218,7 +218,7 @@ static int snd_pnx8550spdo_prepare(struct snd_pcm_substream *substream)
 		wlen = IEC958_AES4_CON_WORDLEN_20_16;
 	chip->cswl[4] = chip->cswr[4] = IEC958_AES4_CON_ORIGFS_NOTID | wlen;
 	chip->cswl[5] = chip->cswr[5] = IEC958_AES5_CON_CGMSA_COPYFREELY;
-	printk(KERN_DEBUG "pnx8550spdo: synthesized CSW:"
+	dev_dbg(chip->dev, "pnx8550spdo: synthesized CSW:"
 			" L=%02x%02x%02x%02x%02x%02x R=%02x%02x%02x%02x%02x%02x\n",
 			chip->cswl[5], chip->cswl[4], chip->cswl[3], chip->cswl[2],
 			chip->cswl[1], chip->cswl[0],
@@ -469,6 +469,7 @@ static int __devinit snd_pnx8550spdo_probe(struct platform_device *pdev)
 		return err;
 	}
 	snd_card_set_dev(card, &pdev->dev);
+	chip->dev = &pdev->dev;
 
 	err = snd_pnx8550spdo_new_pcm(chip);
 	if (err < 0) {
