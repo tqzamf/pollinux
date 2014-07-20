@@ -33,6 +33,7 @@
 #include <sound/control.h>
 #include <sound/pcm.h>
 #include <sound/initval.h>
+#include <sound/asoundef.h>
 
 #include <asm/mach-pnx8550/spdif.h>
 #include <asm/div64.h>
@@ -46,9 +47,12 @@ struct snd_pnx8550spdo {
 	void *buffer;
 	dma_addr_t buf1_dma;
 	dma_addr_t buf2_dma;
+	snd_pcm_uframes_t samples;
 	snd_pcm_uframes_t ptr;
 	struct snd_pcm_substream *substream;
 	int volume;
+	unsigned char cswl[24];
+	unsigned char cswr[24];
 };
 
 static irqreturn_t snd_pnx8550spdo_isr(int irq, void *dev_id)
@@ -61,7 +65,7 @@ static irqreturn_t snd_pnx8550spdo_isr(int irq, void *dev_id)
 	if (status & PNX8550_SPDO_BUF1) {
 		// buffer 1 has run empty, so we need to fill it now. tell the
 		// hardware that we already did, because that clears the interrupt.
-		chip->ptr = PNX8550_SPDO_SAMPLES;
+		chip->ptr = chip->samples;
 		control |= PNX8550_SPDO_BUF1;
 	} else if (status & PNX8550_SPDO_BUF2) {
 		// same for buffer 2
@@ -88,7 +92,7 @@ static irqreturn_t snd_pnx8550spdo_isr(int irq, void *dev_id)
 static struct snd_pcm_hardware snd_pnx8550spdo_hw = {
 	.info = (SNDRV_PCM_INFO_INTERLEAVED | SNDRV_PCM_INFO_BLOCK_TRANSFER
 			| SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID),
-	.formats =          SNDRV_PCM_FMTBIT_S16_LE,
+	.formats =          SNDRV_PCM_FMTBIT_S16_LE | SNDRV_PCM_FMTBIT_S32_LE,
 	.rates =            SNDRV_PCM_RATE_8000_96000 | SNDRV_PCM_RATE_CONTINUOUS,
 	.rate_min =         PNX8550_SPDO_RATE_MIN,
 	.rate_max =         PNX8550_SPDO_RATE_MAX,
@@ -126,23 +130,100 @@ static int snd_pnx8550spdo_close(struct snd_pcm_substream *substream)
 static int snd_pnx8550spdo_hw_params(struct snd_pcm_substream *substream,
 					struct snd_pcm_hw_params *hw_params)
 {
+	struct snd_pnx8550spdo *chip = snd_pcm_substream_chip(substream);
+
+	if (chip->buffer == NULL) {
+		/* allocate DMA-capable buffers */
+		chip->buffer = dma_alloc_coherent(NULL, PNX8550_SPDO_BUF_ALLOC,
+							 &chip->buf1_dma, GFP_USER);
+		if (chip->buffer == NULL) {
+			printk(KERN_ERR
+				   "pnx8550spdo: could not allocate ring buffers\n");
+			return -ENOMEM;
+		}
+		chip->buf2_dma = chip->buf1_dma + PNX8550_SPDO_BUF_SIZE;
+		printk(KERN_DEBUG "pnx8550spdo: buffer1=%08x buffer2=%08x\n",
+				chip->buf1_dma, chip->buf2_dma);
+
+		/* setup buffer base addresses and sizes */
+		PNX8550_SPDO_BUF1_BASE = chip->buf1_dma;
+		PNX8550_SPDO_BUF2_BASE = chip->buf2_dma;
+		PNX8550_SPDO_SIZE = PNX8550_SPDO_BUF_SIZE;
+	}
+
 	return snd_pcm_lib_alloc_vmalloc_buffer(substream,
 						params_buffer_bytes(hw_params));
 }
 
 static int snd_pnx8550spdo_hw_free(struct snd_pcm_substream *substream)
 {
+	struct snd_pnx8550spdo *chip = snd_pcm_substream_chip(substream);
+
+	if (chip->buffer != NULL) {
+		dma_free_coherent(NULL, PNX8550_SPDO_BUF_ALLOC, chip->buffer,
+				chip->buf1_dma);
+		chip->buffer = NULL;
+
+		chip->buf2_dma = chip->buf1_dma = 0;
+		PNX8550_SPDO_BUF1_BASE = chip->buf1_dma;
+		PNX8550_SPDO_BUF2_BASE = chip->buf2_dma;
+	}
+
 	return snd_pcm_lib_free_vmalloc_buffer(substream);
 }
 
 static int snd_pnx8550spdo_prepare(struct snd_pcm_substream *substream)
 {
+	struct snd_pnx8550spdo *chip = snd_pcm_substream_chip(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	unsigned long dds, rem;
+	unsigned long dds, rem, size, fscode, wlen;
 	u64 rate;
 	
 	printk(KERN_DEBUG "pnx8550spdo: setting %dch %dHz, format=%d\n",
 			runtime->channels, runtime->rate, runtime->format);
+	
+	switch (runtime->format) {
+	case SNDRV_PCM_FORMAT_S16_LE:
+		chip->samples = PNX8550_SPDO_SAMPLES;
+		size = PNX8550_SPDO_BUF_SIZE;
+		break;
+	case SNDRV_PCM_FORMAT_S32_LE:
+		chip->samples = PNX8550_SPDO_SAMPLES / 2;
+		size = PNX8550_SPDO_BUF_SIZE / 2;
+		break;
+	default:
+		return -EINVAL;
+	}
+	
+	chip->cswl[0] = chip->cswr[0] = IEC958_AES0_CON_NOT_COPYRIGHT
+			| IEC958_AES0_CON_EMPHASIS_NONE;
+	chip->cswl[1] = chip->cswr[1] = IEC958_AES1_CON_GENERAL
+			| IEC958_AES1_CON_ORIGINAL;
+	chip->cswl[2] = IEC958_AES2_CON_SOURCE_UNSPEC | (1 << 4);
+	chip->cswr[2] = IEC958_AES2_CON_SOURCE_UNSPEC | (2 << 4);
+	switch (runtime->rate) {
+	case 22050: fscode = IEC958_AES3_CON_FS_22050; break;
+	case 24000: fscode = IEC958_AES3_CON_FS_24000; break;
+	case 32000: fscode = IEC958_AES3_CON_FS_32000; break;
+	case 44100: fscode = IEC958_AES3_CON_FS_44100; break;
+	case 48000: fscode = IEC958_AES3_CON_FS_48000; break;
+	case 88200: fscode = IEC958_AES3_CON_FS_88200; break;
+	case 96000: fscode = IEC958_AES3_CON_FS_96000; break;
+	default: fscode = IEC958_AES3_CON_FS_NOTID;
+	}
+	chip->cswl[3] = chip->cswr[3] = IEC958_AES3_CON_CLOCK_1000PPM | fscode;
+	if (runtime->format == SNDRV_PCM_FORMAT_S32_LE)
+		wlen = IEC958_AES4_CON_MAX_WORDLEN_24 | IEC958_AES4_CON_WORDLEN_24_20;
+	else
+		wlen = IEC958_AES4_CON_WORDLEN_20_16;
+	chip->cswl[4] = chip->cswr[4] = IEC958_AES4_CON_ORIGFS_NOTID | wlen;
+	chip->cswl[5] = chip->cswr[5] = IEC958_AES5_CON_CGMSA_COPYFREELY;
+	printk(KERN_DEBUG "pnx8550spdo: synthesized CSW:"
+			" L=%02x%02x%02x%02x%02x%02x R=%02x%02x%02x%02x%02x%02x\n",
+			chip->cswl[5], chip->cswl[4], chip->cswl[3], chip->cswl[2],
+			chip->cswl[1], chip->cswl[0],
+			chip->cswr[5], chip->cswr[4], chip->cswr[3], chip->cswr[2],
+			chip->cswr[1], chip->cswr[0]);
 
 	// the DDS can do any rate, with ridculously low jitter specs.
 	// the DAC doesn't seem to choke on wildly out-of-spec rates either.
@@ -169,6 +250,7 @@ static int snd_pnx8550spdo_prepare(struct snd_pcm_substream *substream)
 	}
 
 	PNX8550_SPDO_DDS_CTL = dds;
+	PNX8550_SPDO_SIZE = size;
 	return 0;
 }
 
@@ -208,13 +290,23 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
                snd_pcm_uframes_t pos, void *src, snd_pcm_uframes_t count)
 {
 	struct snd_pnx8550spdo *chip = snd_pcm_substream_chip(substream);
+	struct snd_pcm_runtime *runtime = substream->runtime;
 	unsigned int off, len, offset, i, j;
-	u16 *source;
-	u32 *buffer;
+	unsigned char *csw1 = chip->cswl, *csw2 = chip->cswr;
+	u16 *source16;
+	u32 *buffer, *source32;
+	
+	if (chip->buffer == NULL) {
+		printk(KERN_ERR "pnx8550spdo: refusing to write to null buffer\n");
+		return 0;
+	}
 	
 	off = frames_to_bytes(substream->runtime, pos);
-	source = src;
-	offset = 8*pos;
+	source16 = src; source32 = src;
+	if (pos == 0)
+		offset = 0;
+	else
+		offset = PNX8550_SPDO_BUF_SIZE;
 	len = 2*count;
 	if (offset + 4*len > PNX8550_SPDO_BUF_ALLOC) {
 		printk(KERN_ERR "pnx8550spdo: refusing to write beyond end of buffer"
@@ -223,26 +315,42 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 	}
 	
 	buffer = chip->buffer + offset;
-	for (i = 0; i < len; i += 2*192) {
-		buffer[i + 0] = (((u32) source[i + 0]) << 12) | PNX8550_SPDO_PREAMBLE_BLOCK;
-		buffer[i + 1] = (((u32) source[i + 1]) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
-		for (j = 2; j < 2*192; j += 2) {
-			buffer[i + j + 0] = (((u32) source[i + j + 0]) << 12) | PNX8550_SPDO_PREAMBLE_CHAN1;
-			buffer[i + j + 1] = (((u32) source[i + j + 1]) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
+	if (runtime->format == SNDRV_PCM_FORMAT_S16_LE) {
+		for (i = 0; i < len; i += 2*192) {
+			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_BLOCK;
+			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
+		#define COPY16(cswbit) \
+			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN1 \
+					| (((*csw1) & (1 << cswbit)) << (30 - cswbit)); \
+			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2 \
+					| (((*csw2) & (1 << cswbit)) << (30 - cswbit));
+			COPY16(1); COPY16(2); COPY16(3);
+			COPY16(4); COPY16(5); COPY16(6); COPY16(7);
+			csw1++; csw2++;
+			for (j = 1; j < 192/8; j++) {
+				COPY16(0); COPY16(1); COPY16(2); COPY16(3);
+				COPY16(4); COPY16(5); COPY16(6); COPY16(7);
+				csw1++; csw2++;
+			}
 		}
-		
-		#define SET_CHANNEL_CONTROL(channel, bit) \
-			buffer[i + 2*bit + channel] |= PNX8550_SPDO_BIT_CHSTATUS
-		// mark data stream as left/right audio with unspecified sample rate
-		SET_CHANNEL_CONTROL(0, PNX8550_SPDIF_CHANNEL_BIT(0));
-		SET_CHANNEL_CONTROL(1, PNX8550_SPDIF_CHANNEL_BIT(1));
-		SET_CHANNEL_CONTROL(0, PNX8550_SPDIF_SAMPLERATE_BIT(0));
-		SET_CHANNEL_CONTROL(1, PNX8550_SPDIF_SAMPLERATE_BIT(0));
-		// SCMS (copy protection) bullshit: try to disable copy protection
-		SET_CHANNEL_CONTROL(0, PNX8550_SPDIF_SCMS_DISABLE_BIT);
-		SET_CHANNEL_CONTROL(1, PNX8550_SPDIF_SCMS_DISABLE_BIT);
-		SET_CHANNEL_CONTROL(0, PNX8550_SPDIF_ORIGINAL_BIT);
-		SET_CHANNEL_CONTROL(1, PNX8550_SPDIF_ORIGINAL_BIT);
+	} else {
+		for (i = 0; i < len; i += 2*192) {
+			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_BLOCK;
+			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN2;
+		#define COPY32(cswbit) \
+			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN1 \
+					| (((*csw1) & (1 << cswbit)) << (30 - cswbit)); \
+			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN2 \
+					| (((*csw2) & (1 << cswbit)) << (30 - cswbit));
+			COPY32(1); COPY32(2); COPY32(3);
+			COPY32(4); COPY32(5); COPY32(6); COPY32(7);
+			csw1++; csw2++;
+			for (j = 1; j < 192/8; j++) {
+				COPY32(0); COPY32(1); COPY32(2); COPY32(3);
+				COPY32(4); COPY32(5); COPY32(6); COPY32(7);
+				csw1++; csw2++;
+			}
+		}
 	}
 
 	return 0;
@@ -290,9 +398,6 @@ static int snd_pnx8550spdo_free(struct snd_pnx8550spdo *chip)
 	/* release IRQ */
 	free_irq(PNX8550_SPDO_IRQ, chip);
 
-	dma_free_coherent(NULL, PNX8550_SPDO_BUF_ALLOC, chip->buffer,
-			chip->buf1_dma);
-
 	/* release card data */
 	kfree(chip);
 	return 0;
@@ -322,17 +427,6 @@ static int __devinit snd_pnx8550spdo_create(struct snd_card *card,
 		return -ENOMEM;
 	chip->card = card;
 
-	/* allocate DMA-capable buffers */
-	chip->buffer = dma_alloc_coherent(NULL, PNX8550_SPDO_BUF_ALLOC,
-					     &chip->buf1_dma, GFP_USER);
-	if (chip->buffer == NULL) {
-		printk(KERN_ERR
-		       "pnx8550spdo: could not allocate ring buffers\n");
-		kfree(chip);
-		return -ENOMEM;
-	}
-	chip->buf2_dma = chip->buf1_dma + PNX8550_SPDO_BUF_SIZE;
-
 	/* allocate IRQ */
 	if (request_irq(PNX8550_SPDO_IRQ, snd_pnx8550spdo_isr, 0,
 			"pnx8550spdo", chip)) {
@@ -345,11 +439,6 @@ static int __devinit snd_pnx8550spdo_create(struct snd_card *card,
 	/* configure and start the clock */
 	PNX8550_SPDO_DDS_CTL = PNX8550_SPDO_DDS_48;
 	PNX8550_SPDO_BCLK_CTL = PNX8550_SPDO_BCLK_ENABLE;
-	
-	/* setup buffer base addresses and sizes */
-	PNX8550_SPDO_BUF1_BASE = chip->buf1_dma;
-	PNX8550_SPDO_BUF2_BASE = chip->buf2_dma;
-	PNX8550_SPDO_SIZE = PNX8550_SPDO_BUF_SIZE;
 	
 	err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops);
 	if (err < 0) {
@@ -390,10 +479,8 @@ static int __devinit snd_pnx8550spdo_probe(struct platform_device *pdev)
 	strcpy(card->shortname, "PNX8550 SPDO");
 	strcpy(card->driver, card->shortname);
 	strcpy(card->longname, "PNX8550 SPDIF Out");
-	printk(KERN_INFO "pnx8550spdo: %s driver buf1=%08x buf2=%08x\n",
-			card->longname, chip->buf1_dma, chip->buf2_dma);
-	printk(KERN_DEBUG "pnx8550spdo: buffer1=%08x buffer2=%08x\n",
-			chip->buf1_dma, chip->buf2_dma);
+	printk(KERN_INFO "pnx8550spdo: %s driver, dynamic buffers\n",
+			card->longname);
 
 	err = snd_card_register(card);
 	if (err < 0) {
