@@ -26,6 +26,7 @@ static int __init pnx8550_powerdown_unused(void)
 	POWERDOWN(VLD);
 	POWERDOWN(MSP1);
 	POWERDOWN(MSP2);
+	POWERDOWN(TSDMA);
 	// (analog) video input hardware. the board never had analog video in
 	// the first place, so these have always been unused.
 	POWERDOWN(VIP1);
@@ -34,6 +35,12 @@ static int __init pnx8550_powerdown_unused(void)
 	POWERDOWN(MBS1);
 	POWERDOWN(MBS2);
 	POWERDOWN(MBS3);
+
+	// the DVD CSS module. undocumented to prevent unauthorized use, and thus
+	// useless.
+	// the CSS cryptographic break is probably documented significantly better
+	// than this module...
+	POWERDOWN(DVDCSS);
 
     return 0;
 }

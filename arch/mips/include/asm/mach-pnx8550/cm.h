@@ -109,16 +109,17 @@
 #define PNX8550_CM_TM_CLK_PLL    0x02
 #define PNX8550_CM_TM_CLK_MIPS   0x04
 
-#define PNX8550_CM_VMPG_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x400)
-#define PNX8550_CM_VLD_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x404)
-#define PNX8550_CM_MBS1_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x500)
-#define PNX8550_CM_MBS2_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x750)
-#define PNX8550_CM_MBS3_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x504)
-#define PNX8550_CM_VIP1_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x600)
-#define PNX8550_CM_VIP2_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x604)
-#define PNX8550_CM_MSP1_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x800)
-#define PNX8550_CM_MSP2_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x804)
-#define PNX8550_CM_A005_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb3c)
+#define PNX8550_CM_VMPG_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x400)
+#define PNX8550_CM_VLD_CTL    *(volatile unsigned long *)(PNX8550_CM_BASE + 0x404)
+#define PNX8550_CM_MBS1_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x500)
+#define PNX8550_CM_MBS2_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x750)
+#define PNX8550_CM_MBS3_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x504)
+#define PNX8550_CM_VIP1_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x600)
+#define PNX8550_CM_VIP2_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x604)
+#define PNX8550_CM_MSP1_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x800)
+#define PNX8550_CM_MSP2_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x804)
+#define PNX8550_CM_TSDMA_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb34)
+#define PNX8550_CM_DVDCSS_CTL *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb3c)
 
 #define PNX8550_CM_OHCI_CTL     *(volatile unsigned long *)(PNX8550_CM_BASE + 0x710)
 #define PNX8550_CM_I2C_HP_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x714)
