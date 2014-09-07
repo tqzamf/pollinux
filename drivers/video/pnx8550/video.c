@@ -301,85 +301,85 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     PNX8550_CM_QVCP1_PROC_CTL = PNX8550_CM_QVCP_CLK_ENABLE
 			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17;
     // disable power-down mode
-    outl(0x00000000, PCI_BASE | 0x10eff4);
+    PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) = 0;
 
     // setup screen geometry
     if (pal)
     {
-        outl(0x035f0137, PCI_BASE | 0x10e000);
-        outl(0x02d0035f, PCI_BASE | 0x10e004);
-        outl(0x01390016, PCI_BASE | 0x10e008);
-        outl(0x02dd0350, PCI_BASE | 0x10e00c);
-        outl(0x0001000b, PCI_BASE | 0x10e010);
-        outl(0x00AF0137, PCI_BASE | 0x10e014);
-        outl(0x012D02DD, PCI_BASE | 0x10e028);
-        outl(0x012C02DC, PCI_BASE | 0x10e02c);
-        outl(0x012002d0, PCI_BASE | 0x10e234);
+        PNX8550FB_QVCP1_REG(0x000) = 0x035f0137;
+        PNX8550FB_QVCP1_REG(0x004) = 0x02d0035f;
+        PNX8550FB_QVCP1_REG(0x008) = 0x01390016;
+        PNX8550FB_QVCP1_REG(0x00c) = 0x02dd0350;
+        PNX8550FB_QVCP1_REG(0x010) = 0x0001000b;
+        PNX8550FB_QVCP1_REG(0x014) = 0x00AF0137;
+        PNX8550FB_QVCP1_REG(0x028) = 0x012D02DD;
+        PNX8550FB_QVCP1_REG(0x02c) = 0x012C02DC;
+        PNX8550FB_QVCP1_REG(0x234) = 0x012002d0;
     }
     else
     {
-        outl(0x03590105, PCI_BASE | 0x10e000);
-        outl(0x02d00359, PCI_BASE | 0x10e004);
-        outl(0x01070012, PCI_BASE | 0x10e008);
-        outl(0x02dd034a, PCI_BASE | 0x10e00c);
-        outl(0x0004000b, PCI_BASE | 0x10e010);
-        outl(0x00950105, PCI_BASE | 0x10e014);
-        outl(0x013002DD, PCI_BASE | 0x10e028);
-        outl(0x012F02DC, PCI_BASE | 0x10e02c);
-        outl(0x00F002d0, PCI_BASE | 0x10e234);
+        PNX8550FB_QVCP1_REG(0x000) = 0x03590105;
+        PNX8550FB_QVCP1_REG(0x004) = 0x02d00359;
+        PNX8550FB_QVCP1_REG(0x008) = 0x01070012;
+        PNX8550FB_QVCP1_REG(0x00c) = 0x02dd034a;
+        PNX8550FB_QVCP1_REG(0x010) = 0x0004000b;
+        PNX8550FB_QVCP1_REG(0x014) = 0x00950105;
+        PNX8550FB_QVCP1_REG(0x028) = 0x013002DD;
+        PNX8550FB_QVCP1_REG(0x02c) = 0x012F02DC;
+        PNX8550FB_QVCP1_REG(0x234) = 0x00F002d0;
     }
     // configure and enable timing generator and video output
-    outl(0x20050005, PCI_BASE | 0x10e020);
-    outl(0x0fc01401, PCI_BASE | 0x10e03c);
+    PNX8550FB_QVCP1_REG(0x020) = 0x20050005;
+    PNX8550FB_QVCP1_REG(0x03c) = 0x0fc01401;
     // disable VBI generation
-    outl(0x00000000, PCI_BASE | 0x10e034);
-    outl(0x00000000, PCI_BASE | 0x10e038);
+    PNX8550FB_QVCP1_REG(0x034) = 0x00000000;
+    PNX8550FB_QVCP1_REG(0x038) = 0x00000000;
     // pedestals off
-    outl(0x0, PCI_BASE | 0x10e05c);
-    outl(0x0, PCI_BASE | 0x10e060);
+    PNX8550FB_QVCP1_REG(0x05c) = 0x0;
+    PNX8550FB_QVCP1_REG(0x060) = 0x0;
     // noise shaping on
-    outl(0x00130013, PCI_BASE | 0x10e070);
-    outl(0x803F3F3F, PCI_BASE | 0x10e074);
+    PNX8550FB_QVCP1_REG(0x070) = 0x00130013;
+    PNX8550FB_QVCP1_REG(0x074) = 0x803F3F3F;
     // set layer base address and size
-    outl(buffer, PCI_BASE | 0x10e200);
-    outl(PNX8550FB_STRIDE*4, PCI_BASE | 0x10e204);
-    outl(PNX8550FB_STRIDE*2, PCI_BASE | 0x10e208);
-    outl(buffer + (PNX8550FB_STRIDE*2), PCI_BASE | 0x10e20c);
-    outl(PNX8550FB_STRIDE*4, PCI_BASE | 0x10e210);
-    outl(8, PCI_BASE | 0x10e214);
-    outl(0x80000000 | (16<<16)|(0x30), PCI_BASE | 0x10e230);
-    outl(PNX8550FB_WIDTH, PCI_BASE | 0x10e2b4);
+    PNX8550FB_QVCP1_REG(0x200) = buffer;
+    PNX8550FB_QVCP1_REG(0x204) = PNX8550FB_STRIDE*4;
+    PNX8550FB_QVCP1_REG(0x208) = PNX8550FB_STRIDE*2;
+    PNX8550FB_QVCP1_REG(0x20c) = buffer + (PNX8550FB_STRIDE*2);
+    PNX8550FB_QVCP1_REG(0x210) = PNX8550FB_STRIDE*4;
+    PNX8550FB_QVCP1_REG(0x214) = 8;
+    PNX8550FB_QVCP1_REG(0x230) = 0x80000000 | (16<<16)|(0x30);
+    PNX8550FB_QVCP1_REG(0x2b4) = PNX8550FB_WIDTH;
     // set pixel format
-    outl(0x20, PCI_BASE | 0x10e23c);
-    outl(0x0, PCI_BASE | 0x10e238);
+    PNX8550FB_QVCP1_REG(0x23c) = 0x20;
+    PNX8550FB_QVCP1_REG(0x238) = 0x0;
     // disable chroma keying
-    outl(0x0, PCI_BASE | 0x10e25c);
-    outl(0x0, PCI_BASE | 0x10e26c);
-    outl(0x0, PCI_BASE | 0x10e27c);
-    outl(0x0, PCI_BASE | 0x10e28c);
+    PNX8550FB_QVCP1_REG(0x25c) = 0x0;
+    PNX8550FB_QVCP1_REG(0x26c) = 0x0;
+    PNX8550FB_QVCP1_REG(0x27c) = 0x0;
+    PNX8550FB_QVCP1_REG(0x28c) = 0x0;
     // color mode = ARGB 8888
-    outl(0xec, PCI_BASE | 0x10e2bc);
-    outl(0xffe7eff7, PCI_BASE | 0x10e2c4);
+    PNX8550FB_QVCP1_REG(0x2bc) = 0xec;
+    PNX8550FB_QVCP1_REG(0x2c4) = 0xffe7eff7;
     // brightness / contrast / gamma
-    outl(0xe00, PCI_BASE | 0x10e2b8);
-    outl(0x100f100, PCI_BASE | 0x10e2cc);
+    PNX8550FB_QVCP1_REG(0x2b8) = 0xe00;
+    PNX8550FB_QVCP1_REG(0x2cc) = 0x100f100;
     // matrix coefficients
-    outl(0x004d0096, PCI_BASE | 0x10e2d0);
-    outl(0x001d07da, PCI_BASE | 0x10e2d4);
-    outl(0x07b60070, PCI_BASE | 0x10e2d8);
-    outl(0x009d077c, PCI_BASE | 0x10e2dc);
-    outl(0x07e60100, PCI_BASE | 0x10e2e0);
+    PNX8550FB_QVCP1_REG(0x2d0) = 0x004d0096;
+    PNX8550FB_QVCP1_REG(0x2d4) = 0x001d07da;
+    PNX8550FB_QVCP1_REG(0x2d8) = 0x07b60070;
+    PNX8550FB_QVCP1_REG(0x2dc) = 0x009d077c;
+    PNX8550FB_QVCP1_REG(0x2e0) = 0x07e60100;
 	// enable the layer
-    outl(0x1, PCI_BASE | 0x10e240);
+    PNX8550FB_QVCP1_REG(0x240) = 0x1;
 }
 
 /* Shuts down the QVCP by powering it down */
 static void pnx8550fb_shutdown_QVCP(void)
 {
 	// disable timing generator, and thus all layers
-    outl(0x00000000, PCI_BASE | 0x10e020);
+    PNX8550FB_QVCP1_REG(0x020) = 0x00000000;
     // power-down
-	outl(0x80000000, PCI_BASE | 0x10eff4);
+    PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) = PNX8550_DCSN_POWERDOWN_CMD;
     // stop clock
     PNX8550_CM_QVCP1_OUT_CTL = 0;
     PNX8550_CM_QVCP1_PIX_CTL = 0;
@@ -442,9 +442,9 @@ static void pnx8550fb_shutdown_unused(void)
     // put the DACs into power-down mode
     PNX8550FB_QVCP2_DAC_REG(0xa5) = 0x01;
 	// disable timing generator, and thus all layers
-    outl(0x00000000, PCI_BASE | 0x10f020);
+    PNX8550FB_QVCP2_REG(0x020) = 0x00000000;
     // power-down the module
-    outl(0x80000000, PCI_BASE | 0x10fff4);
+    PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP2_BASE) = 0;
     // Stop the unnecessary clocks to the QVCP to shut it down
     // completely. The output clock to the DACs must remain running.
     PNX8550_CM_QVCP2_PIX_CTL = 0;

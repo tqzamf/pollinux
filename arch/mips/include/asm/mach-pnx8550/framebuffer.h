@@ -35,6 +35,10 @@ extern void pnx8550fb_set_volume(int volume);
 #define PNX8550FB_LINE_SIZE (PNX8550FB_WIDTH * sizeof(int))
 #define PNX8550FB_SIZE (PNX8550FB_HEIGHT_PAL * PNX8550FB_LINE_SIZE)
 
+#define PNX8550FB_QVCP1_BASE 0xBBF0E000
+#define PNX8550FB_QVCP1_REG(x) (*(volatile unsigned long *)(PNX8550FB_QVCP1_BASE + (x)))
+#define PNX8550FB_QVCP2_BASE 0xBBF0F000
+#define PNX8550FB_QVCP2_REG(x) (*(volatile unsigned long *)(PNX8550FB_QVCP2_BASE + (x)))
 #define PNX8550FB_QVCP2_DAC_BASE 0xBBF17000
 #define PNX8550FB_QVCP2_DAC_REG(x) (*(volatile unsigned long *)(PNX8550FB_QVCP2_DAC_BASE + 4 * (x)))
 
