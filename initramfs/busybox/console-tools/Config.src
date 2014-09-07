@@ -149,6 +149,14 @@ config SETLOGCONS
 	help
 	  This program redirects the output console of kernel messages.
 
+config SETVESABLANK
+	bool "setvesablank"
+	default y
+	select PLATFORM_LINUX
+	help
+	  This program sets the VESA blanking mode for the console, allowing
+	  the display to power down when not in use.
+
 config SHOWKEY
 	bool "showkey"
 	default y

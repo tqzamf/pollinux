@@ -22,4 +22,5 @@ lib-$(CONFIG_RESIZE)		+= resize.o
 lib-$(CONFIG_SETFONT)		+= loadfont.o
 lib-$(CONFIG_SETKEYCODES)	+= setkeycodes.o
 lib-$(CONFIG_SETLOGCONS)	+= setlogcons.o
+lib-$(CONFIG_SETVESABLANK)	+= setvesablank.o
 lib-$(CONFIG_SHOWKEY)		+= showkey.o
