@@ -375,7 +375,7 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
 static void pnx8550fb_shutdown_QVCP(void)
 {
 	// disable timing generator, and thus all layers
-    outl(0x00000004, PCI_BASE | 0x10e020);
+    outl(0x00000000, PCI_BASE | 0x10e020);
     // power-down
 	outl(0x80000000, PCI_BASE | 0x10eff4);
     // stop clock
@@ -393,12 +393,16 @@ static const unsigned char pnx8550fb_anabel2_shutdown[] =
 /* command to shut down the unused audio channels on the Anabel */
 static const unsigned char pnx8550fb_anabel_audio_shutdown[] =
 {
-    0xfe,0x01
+    0xfe,0x00
+};
+/* command to shut down the clocks to the second video channel on the Anabel */
+static const unsigned char pnx8550fb_anabel_clock_shutdown[] =
+{
+    0x01,0x01,0x01
 };
 
 static struct i2c_msg pnx8550fb_anabel2_msg = {
 	.flags = 0,
-	.len = 2,
 };
 
 /* shuts down the secondary QVCP and the unused parts of Anabel */
@@ -414,6 +418,7 @@ static void pnx8550fb_shutdown_unused(void)
 
 	// shutdown both PNX8510 audio channels
 	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel_audio_shutdown;
+	pnx8550fb_anabel2_msg.len = 2;
 	pnx8550fb_anabel2_msg.addr = I2C_ANABEL_AUDIO1_ADDR;
 	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error for AUDIO1\n", __func__);
@@ -421,8 +426,15 @@ static void pnx8550fb_shutdown_unused(void)
 	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error for AUDIO2\n", __func__);
 
+	// shutdown clocks to PNX8510 second video channel
+	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel_clock_shutdown;
+	pnx8550fb_anabel2_msg.len = 3;
+	pnx8550fb_anabel2_msg.addr = I2C_ANABEL_AUDIO2_ADDR;
+	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
+		printk(KERN_ERR "%s: write error for CLOCK2\n", __func__);
+
 	// disable timing generator, and thus all layers
-    outl(0x00000004, PCI_BASE | 0x10f020);
+    outl(0x00000000, PCI_BASE | 0x10f020);
     // power-down
     outl(0x80000000, PCI_BASE | 0x10fff4);
     // Stop the clock to the QVCP #2 to shut it down completely.
