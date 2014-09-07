@@ -25,6 +25,8 @@
 #include <framebuffer.h>
 #include <audio.h>
 #include <linux/i2c.h>
+#include <linux/fb.h>
+#include <linux/delay.h>
 #include <i2c.h>
 #include <dcsn.h>
 #include <cm.h>
@@ -48,7 +50,7 @@ static void pnx8550fb_set_reg(unsigned char addr, unsigned char reg, unsigned ch
 		.len = 2,
 		.buf = data,
 	};
-	
+
     adapter = i2c_get_adapter(I2C_ANABEL_BUS);
 	if (i2c_transfer(adapter, &msg, 1) != 1)
 		printk(KERN_ERR "%s: error writing device %02x register %02x\n",
@@ -63,7 +65,7 @@ static void pnx8550fb_anabel_set_reg(unsigned char reg, unsigned char value)
 
 // sets a series of consecutive registers in the SCART switch (AK4705)
 static void pnx8550fb_scart_set_regs(unsigned char addr,
-		unsigned char *data, unsigned char len)
+		const unsigned char *data, unsigned char len)
 {
 	struct i2c_adapter *adapter;
     unsigned char addr_and_data[len + 1];
@@ -73,7 +75,7 @@ static void pnx8550fb_scart_set_regs(unsigned char addr,
 		.len = len + 1,
 		.buf = addr_and_data,
 	};
-	
+
 	addr_and_data[0] = addr;
 	memcpy(&addr_and_data[1], data, len);
     adapter = i2c_get_adapter(I2C_SCART_BUS);
@@ -82,27 +84,29 @@ static void pnx8550fb_scart_set_regs(unsigned char addr,
 				__func__, addr, addr + len);
 }
 
+// sets a single register in the SCART switch (AK4705)
+static void pnx8550fb_scart_set_reg(unsigned char reg, unsigned char data)
+{
+	pnx8550fb_scart_set_regs(reg, &data, 1);
+}
+
 // configures Anabel (PNX8510) for PAL/NTSC
 static void pnx8550fb_setup_anabel(int pal)
 {
-	// make sure the clocks are enabled
-	pnx8550fb_set_reg(I2C_ANABEL_AUDIO1_ADDR, 0x01, 0x00);
-	pnx8550fb_set_reg(I2C_ANABEL_AUDIO1_ADDR, 0x02, 0x00);
-	
 	// the PNX8510 datasheet lists all undefined registers as "Must be
 	// initialized to zero". these are the ones that are actually
 	// initialized in the NXP splash screen code; the rest probably
 	// doesn't matter.
 	pnx8550fb_anabel_set_reg(0x60, 0x00);
 	pnx8550fb_anabel_set_reg(0x7d, 0x00);
-	
+
 	// disable insertion of wide screen signalling, copy guard,
 	// video progamming system, closed captioning & teletext
 	pnx8550fb_anabel_set_reg(0x27, 0x00);
 	pnx8550fb_anabel_set_reg(0x2c, 0x00);
 	pnx8550fb_anabel_set_reg(0x54, 0x00);
 	pnx8550fb_anabel_set_reg(0x6f, 0x00);
-	
+
     if (pal) {
 		// color burst config
 		pnx8550fb_anabel_set_reg(0x28, 0x21);
@@ -180,7 +184,7 @@ static void pnx8550fb_setup_anabel(int pal)
 		pnx8550fb_anabel_set_reg(0xc5, 0x0A);
 		pnx8550fb_anabel_set_reg(0xc6, 0x01);
 	}
-	
+
 	// don't perform signature analysis
 	pnx8550fb_anabel_set_reg(0xba, 0x70);
 	// DAC configured for CVBS + RGB (instead of Y/C)
@@ -188,6 +192,7 @@ static void pnx8550fb_setup_anabel(int pal)
 	// set SD (not HD) mode; interface config
 	pnx8550fb_anabel_set_reg(0x3a, 0x48);
 	pnx8550fb_anabel_set_reg(0x95, 0x00);
+
 	// unblank the screen
 	pnx8550fb_anabel_set_reg(0x6e, 0x00);
 }
@@ -231,26 +236,43 @@ void pnx8550fb_set_volume(int volume)
 		vol = 0;
 	if (vol > AK4705_VOL_MAX)
 		vol = AK4705_VOL_MAX;
-	
-	pnx8550fb_scart_set_regs(0x02, &vol, 1);
+
+	pnx8550fb_scart_set_reg(0x02, vol);
 }
 
-// enable or disable blanking
-void pnx8550fb_set_blanking(int blank)
+static void pnx8550fb_hw_suspend(int scart)
 {
-    if (blank)
-		pnx8550fb_anabel_set_reg(0x6e, 0x40);
-	else
-		pnx8550fb_anabel_set_reg(0x6e, 0x00);
+	if (scart) {
+		// de-assert slow & fast blanking on the SCART ports
+		pnx8550fb_scart_set_reg(0x07, 0x80);
+		// set video outputs to Hi-Z
+		pnx8550fb_scart_set_reg(0x04, 0xC0);
+	}
+
+	// make sure the layer is disabled, to guard against any possibility
+	// that stopping the clocks might hang the DMA engine.
+	PNX8550FB_QVCP1_REG(0x240) = 0x00;
+
+	// power down the PNX8510 DACs
+	pnx8550fb_anabel_set_reg(0xa5, 0x31);
+	// stop the clocks
+	pnx8550fb_set_reg(I2C_ANABEL_AUDIO1_ADDR, 0x01, 0x01);
+	pnx8550fb_set_reg(I2C_ANABEL_AUDIO1_ADDR, 0x02, 0x01);
+
+    // power-down the QVCP module (good measure when stopping the clocks)
+    PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) = PNX8550_DCSN_POWERDOWN_CMD;
+    // stop QVCP clocks, but leave the PLL running so it remains locked
+    PNX8550_CM_QVCP1_OUT_CTL = 0;
+    PNX8550_CM_QVCP1_PIX_CTL = 0;
+    PNX8550_CM_QVCP1_PROC_CTL = 0;
 }
 
-// sets up QVCP 1 for PAL/NTSC
-static void pnx8550fb_setup_qvcp(unsigned int buffer, int pal)
+static void pnx8550fb_hw_resume(int scart)
 {
-    // start PLL & DDS
+    // restore QVCP PLL & DDS, just in case
     PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_27MHZ;
     PNX8550_CM_DDS0_CTL = PNX8550_CM_DDS_27MHZ;
-    // enable clocks
+    // enable QVCP clocks
     PNX8550_CM_QVCP1_OUT_CTL = PNX8550_CM_QVCP_CLK_ENABLE
 			| PNX8550_CM_QVCP_CLK_FCLOCK;
     PNX8550_CM_QVCP1_PIX_CTL = PNX8550_CM_QVCP_CLK_ENABLE
@@ -259,9 +281,56 @@ static void pnx8550fb_setup_qvcp(unsigned int buffer, int pal)
     // single layer.
     PNX8550_CM_QVCP1_PROC_CTL = PNX8550_CM_QVCP_CLK_ENABLE
 			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17;
-    // disable power-down mode
+    // disable QVCP power-down mode
     PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) = 0;
 
+	// wait for clocks to come up. the I²C transactions will time out if
+	// the clocks to the PNX8510 aren't yet available.
+	udelay(300);
+	
+	// make sure the clocks are enabled
+	pnx8550fb_set_reg(I2C_ANABEL_AUDIO1_ADDR, 0x01, 0x00);
+	pnx8550fb_set_reg(I2C_ANABEL_AUDIO1_ADDR, 0x02, 0x00);
+	// power the PNX8510 DACs back up
+	pnx8550fb_anabel_set_reg(0xa5, 0x30);
+
+	// layer must be re-enabled separately if desired
+
+	if (scart) {
+		// restore SCART switch to operating config
+		pnx8550fb_scart_set_reg(0x04, pnx8550fb_scart_data[0x04]);
+		pnx8550fb_scart_set_reg(0x07, pnx8550fb_scart_data[0x07]);
+	}
+}
+
+static int pnx8550fb_hw_is_suspended(void)
+{
+    return PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) & PNX8550_DCSN_POWERDOWN_CMD;
+}
+
+// set VESA blanking mode
+void pnx8550fb_set_blanking(int blank)
+{
+	if (blank <= FB_BLANK_NORMAL && pnx8550fb_hw_is_suspended())
+		// switching out of powerdown, ie. need to resume the hardware
+		// to the point where it shows a blank screen
+		pnx8550fb_hw_resume(1);
+
+    if (blank == FB_BLANK_UNBLANK)
+		// re-enable the layer
+		PNX8550FB_QVCP1_REG(0x240) = 0x01;
+	else
+		// disable the layer, blanking the screen
+		PNX8550FB_QVCP1_REG(0x240) = 0x00;
+
+	if (blank > FB_BLANK_NORMAL && !pnx8550fb_hw_is_suspended())
+		// switching into powerdown. suspend the display hardware.
+		pnx8550fb_hw_suspend(1);
+}
+
+// sets up QVCP 1 for PAL/NTSC
+static void pnx8550fb_setup_qvcp(unsigned int buffer, int pal)
+{
     // setup screen geometry
     if (pal)
     {
@@ -299,6 +368,8 @@ static void pnx8550fb_setup_qvcp(unsigned int buffer, int pal)
     // noise shaping on
     PNX8550FB_QVCP1_REG(0x070) = 0x00130013;
     PNX8550FB_QVCP1_REG(0x074) = 0x803F3F3F;
+    // set default background color: black
+    PNX8550FB_QVCP1_REG(0x01c) = 0x800000;
     // set layer base address and size
     PNX8550FB_QVCP1_REG(0x200) = buffer;
     PNX8550FB_QVCP1_REG(0x204) = PNX8550FB_STRIDE*4;
@@ -335,14 +406,9 @@ static void pnx8550fb_setup_qvcp(unsigned int buffer, int pal)
 // shuts down the QVCP and powers it down
 static void pnx8550fb_shutdown_qvcp(void)
 {
-	// disable timing generator, and thus all layers
+	// disable timing generator, and thus reset all layers
     PNX8550FB_QVCP1_REG(0x020) = 0x00000000;
-    // power-down
-    PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) = PNX8550_DCSN_POWERDOWN_CMD;
-    // stop clock
-    PNX8550_CM_QVCP1_OUT_CTL = 0;
-    PNX8550_CM_QVCP1_PIX_CTL = 0;
-    PNX8550_CM_QVCP1_PROC_CTL = 0;
+	// power down the PLL as well
     PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_POWERDOWN;
 }
 
@@ -380,6 +446,10 @@ static void pnx8550fb_shutdown_unused(void)
 /* Function used to initialise the screen. */
 void pnx8550fb_setup_display(unsigned int base, int pal)
 {
+	// make sure hardware isn't suspended; might have been left in that
+	// state by something else.
+	pnx8550fb_hw_resume(0);
+
     // set up the QVCP registers
     pnx8550fb_setup_qvcp(base, pal);
 
@@ -397,11 +467,14 @@ void pnx8550fb_setup_display(unsigned int base, int pal)
 /* Function used to shutdown the video system. */
 void pnx8550fb_shutdown_display(void)
 {
-    // power down the QVCP
+    // shutdown display hardware
+    pnx8550fb_hw_suspend(0);
+
+    // power down the QVCP a bit more deeply
     pnx8550fb_shutdown_qvcp();
 
-    // shut down the SCART switch, by restoring it to its power-up
-    // defaults
+    // shut down the SCART switch completely, by restoring it to its
+    // power-up defaults
     pnx8550fb_scart_set_regs(0x00, pnx8550fb_scart_standby,
             ARRAY_SIZE(pnx8550fb_scart_standby));
 }
