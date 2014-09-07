@@ -32,6 +32,5 @@ busybox/scripts/kconfig/conf
 busybox/scripts/kconfig/lex.zconf.c
 busybox/scripts/kconfig/zconf.hash.c
 busybox/scripts/kconfig/zconf.tab.c
-busybox.bin
 files.tmp
 initramfs.cpio
