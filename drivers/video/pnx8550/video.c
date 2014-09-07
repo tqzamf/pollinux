@@ -61,7 +61,28 @@ static void pnx8550fb_anabel_set_reg(unsigned char reg, unsigned char value)
 	pnx8550fb_set_reg(I2C_ANABEL_ADDR, reg, value);
 }
 
-// Function used to set up PAL/NTSC in Anabel
+// sets a series of consecutive registers in the SCART switch (AK4705)
+static void pnx8550fb_scart_set_regs(unsigned char addr,
+		unsigned char *data, unsigned char len)
+{
+	struct i2c_adapter *adapter;
+    unsigned char addr_and_data[len + 1];
+	struct i2c_msg msg = {
+		.addr = I2C_SCART_ADDR,
+		.flags = 0,
+		.len = len + 1,
+		.buf = addr_and_data,
+	};
+	
+	addr_and_data[0] = addr;
+	memcpy(&addr_and_data[1], data, len);
+    adapter = i2c_get_adapter(I2C_SCART_BUS);
+	if (i2c_transfer(adapter, &msg, 1) != 1)
+		printk(KERN_ERR "%s: error writing SCART switch registers %02x .. %02x\n",
+				__func__, addr, addr + len);
+}
+
+// configures Anabel (PNX8510) for PAL/NTSC
 static void pnx8550fb_setup_anabel(int pal)
 {
 	// make sure the clocks are enabled
@@ -171,89 +192,47 @@ static void pnx8550fb_setup_anabel(int pal)
 	pnx8550fb_anabel_set_reg(0x6e, 0x00);
 }
 
-/* Register / Data information used to initialise SCART switch. */
+// register data used to initialise SCART switch for normal operation
 static const unsigned char pnx8550fb_scart_data[] = {
-    0x00, // address byte: start with first register
-    0x70, // STBY, MUTE, DAPD=normal operation, manual startup, audio 24-bit I²S without de-emphasis
-    0x74, // main audio = stereo DAC, VCR SCART audio = stereo DAC, main volume unmuted
-    0x00, // main volume muted (until the audio driver loads and sets the default volume)
-    0x27, // main volume transition = 2048ck, DAC volume = ±0dB, VCR SCART audio = stereo
-    0x09, // TV SCART = encoder CVBS + RGB, VCR SCART = encoder CVBS, composite = encoder CVBS
-    0x5F, // TV CVBS, R, G, B, FB = enabled, VCR CVBS = enabled, VCR C = disabled
-    0x04, // RGB gain +6dB, DC restore = encoder CVBS, VCR clamp = Y/C, encoder clamp = RGB
-    0x8D, // TV FB = +4V, TV SB = output +12V, VCR SB = input
-    0x00, // (readonly status register)
-    0x9E, // video detection masked, interrupts disabled (because nothing expects them)
+    0x70, // control: STBY, MUTE, DAPD=normal operation, chip enabled,
+          //     audio 24-bit I²S without de-emphasis
+    0x74, // audio routing: main audio = stereo DAC,
+          //     VCR SCART audio = stereo DAC, main volume unmuted
+    0x00, // main volume: muted (until the audio driver loads and sets
+          //     the default volume)
+    0x27, // audio config: main volume transition = 2048ck,
+          //     DAC volume = ±0dB, VCR SCART audio = stereo
+    0x09, // video routing: TV SCART = encoder CVBS + RGB,
+          //     VCR SCART = encoder CVBS, composite = encoder CVBS
+    0x5F, // video output enable: TV CVBS, R, G, B, FB = enabled,
+          //     VCR CVBS = enabled, VCR C = disabled
+    0x04, // video gain: RGB gain +6dB, DC restore = encoder CVBS,
+          //     VCR clamp = Y/C, encoder clamp = RGB
+    0x8D, // blanking: TV FB = +4V, TV SB = output +12V, VCR SB = input
+    0x00, // monitor (readonly status register; dummy value)
+    0x9E, // monitor mask: video detection masked, interrupts disabled
+          //     (because nothing expects them)
 };
 
-/* Register / Data information used to place the SCART switch in auto-standby. These are simply the
- * power-up defaults according to the datasheet. */
+// register data to place the SCART switch in auto-standby. these are
+// simply the power-up defaults according to the datasheet.
 static const unsigned char pnx8550fb_scart_standby[] = {
-    0x00, // address byte: start with first register
-    0x7b, // STBY, MUTE enabled, DAPD=normal operation, auto startup, audio 24-bit I²S without de-emphasis
+	0x7b, // control: STBY, MUTE enabled, DAPD=normal operation,
+	      //     auto startup mode, audio 24-bit I²S without de-emphasis
     // the rest is unnecessary but let's restore defaults anyway
     0xd5,0x1f,0x27,0x9c,0x00,0x04,0x00,0x00,0x9E,
 };
 
-/* command to set SCART switch main volume. used by audio. */
-static unsigned char pnx8550fb_scart_volume[] = {
-    0x02, // address byte: main volume
-    0x00, // main volume. overwritten by pnx8550fb_set_volume
-};
-
-static struct i2c_msg pnx8550fb_scart_msg = {
-	.addr = I2C_SCART_ADDR,
-	.flags = 0,
-	.len = sizeof(pnx8550fb_scart_data),
-	.buf = (unsigned char *) pnx8550fb_scart_data,
-};
-
-static struct i2c_msg pnx8550fb_shutdown_msg = {
-	.addr = I2C_SCART_ADDR,
-	.flags = 0,
-	.len = sizeof(pnx8550fb_scart_standby),
-	.buf = (unsigned char *) pnx8550fb_scart_standby,
-};
-
-static struct i2c_msg pnx8550fb_volume_msg = {
-	.addr = I2C_SCART_ADDR,
-	.flags = 0,
-	.len = sizeof(pnx8550fb_scart_volume),
-	.buf = (unsigned char *) pnx8550fb_scart_volume,
-};
-
-/* Function used to set up Scart switch */
-static void pnx8550fb_setup_scart(void)
-{
-	struct i2c_adapter *adapter = i2c_get_adapter(I2C_SCART_BUS);
-	if ((i2c_transfer(adapter, &pnx8550fb_scart_msg, 1)) != 1)
-		printk(KERN_ERR "%s: write error\n", __func__);
-}
-
-/* Function used to switch the Scart switch back to power-up defaults */
-static void pnx8550fb_shutdown_scart(void)
-{
-	struct i2c_adapter *adapter = i2c_get_adapter(I2C_SCART_BUS);
-	if ((i2c_transfer(adapter, &pnx8550fb_shutdown_msg, 1)) != 1)
-		printk(KERN_ERR "%s: write error\n", __func__);
-}
-
-/* Function to set the main volume in the Scart switch / DAC chip */
+// sets the main volume in the SCART switch / DAC chip
 void pnx8550fb_set_volume(int volume)
 {
-	struct i2c_adapter *adapter;
-	char vol;
-	
-	vol = volume;
+	char vol = volume;
 	if (vol < 0)
 		vol = 0;
 	if (vol > AK4705_VOL_MAX)
 		vol = AK4705_VOL_MAX;
-	pnx8550fb_scart_volume[1] = vol;
 	
-	adapter = i2c_get_adapter(I2C_SCART_BUS);
-	if ((i2c_transfer(adapter, &pnx8550fb_volume_msg, 1)) != 1)
-		printk(KERN_ERR "%s: write error\n", __func__);
+	pnx8550fb_scart_set_regs(0x02, &vol, 1);
 }
 
 // enable or disable blanking
@@ -265,7 +244,7 @@ void pnx8550fb_set_blanking(int blank)
 		pnx8550fb_anabel_set_reg(0x6e, 0x00);
 }
 
-/* Function used to set up PAL/NTSC using the QVCP */
+// sets up QVCP 1 for PAL/NTSC
 static void pnx8550fb_setup_qvcp(unsigned int buffer, int pal)
 {
     // start PLL & DDS
@@ -353,7 +332,7 @@ static void pnx8550fb_setup_qvcp(unsigned int buffer, int pal)
     PNX8550FB_QVCP1_REG(0x240) = 0x1;
 }
 
-/* Shuts down the QVCP by powering it down */
+// shuts down the QVCP and powers it down
 static void pnx8550fb_shutdown_qvcp(void)
 {
 	// disable timing generator, and thus all layers
@@ -367,7 +346,7 @@ static void pnx8550fb_shutdown_qvcp(void)
     PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_POWERDOWN;
 }
 
-/* shuts down the secondary QVCP and the unused parts of Anabel */
+// shuts down the secondary QVCP and the unused parts of Anabel
 static void pnx8550fb_shutdown_unused(void)
 {
 	// shutdown PNX8510 second video channel, including clocks
@@ -401,27 +380,30 @@ static void pnx8550fb_shutdown_unused(void)
 /* Function used to initialise the screen. */
 void pnx8550fb_setup_display(unsigned int base, int pal)
 {
-    /* Set up the QVCP registers */
+    // set up the QVCP registers
     pnx8550fb_setup_qvcp(base, pal);
 
-    /* Set up Anabel using I2C */
+    // set up Anabel over I2C
     pnx8550fb_setup_anabel(pal);
 
-    /* Set up the Scart switch */
-    pnx8550fb_setup_scart();
+    // set up the SCART switch
+    pnx8550fb_scart_set_regs(0x00, pnx8550fb_scart_data,
+            ARRAY_SIZE(pnx8550fb_scart_data));
     
-    /* power-down unused hardware */
+    // power-down unused hardware
     pnx8550fb_shutdown_unused();
 }
 
 /* Function used to shutdown the video system. */
 void pnx8550fb_shutdown_display(void)
 {
-    /* power down the QVCP */
+    // power down the QVCP
     pnx8550fb_shutdown_qvcp();
 
-    /* Shut down the Scart switch */
-    pnx8550fb_shutdown_scart();
+    // shut down the SCART switch, by restoring it to its power-up
+    // defaults
+    pnx8550fb_scart_set_regs(0x00, pnx8550fb_scart_standby,
+            ARRAY_SIZE(pnx8550fb_scart_standby));
 }
 
 EXPORT_SYMBOL(pnx8550fb_set_volume);
