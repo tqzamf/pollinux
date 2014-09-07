@@ -6,8 +6,11 @@ mount -t debugfs -o nodev,noexec,nosuid debugfs /sys/kernel/debug
 mount -t devtmpfs dev /dev
 # make modprobe etc. happy
 mkdir -p /lib/modules/$(cut -d' ' -f3 </proc/version)
-# disable framebuffer console blanking
-echo -en '\e[9;0]' >/dev/tty0
+# enable framebuffer console blanking and power-down. 10 minutes is the
+# default for blanking; provide another 5 minutes for the user to
+# prevent power-down if necessary.
+echo -en '\e[9;10]\e[14;5]' >/dev/tty0
+setvesablank 3
 
 # wait for root device, if given on command line.
 eval $(awk -v RS=' ' -v FS== '/^root=/{print}' /proc/cmdline)
