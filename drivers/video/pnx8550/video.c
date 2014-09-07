@@ -28,8 +28,10 @@
 #include <i2c.h>
 #include <cm.h>
 
-#define I2C_ANABEL_ADDR                0x66
+#define I2C_SCART_BUS                  PNX8550_I2C_IP0105_BUS1
 #define I2C_SCART_ADDR                 0x11
+#define I2C_ANABEL_BUS                 PNX8550_I2C_IP3203_BUS1
+#define I2C_ANABEL_ADDR                0x66
 #define I2C_ANABEL2_ADDR               0x6e
 #define I2C_ANABEL_AUDIO1_ADDR         0x76
 #define I2C_ANABEL_AUDIO2_ADDR         0x7e
@@ -207,7 +209,7 @@ static struct i2c_msg pnx8550fb_volume_msg = {
 /* Function used to set up Scart switch */
 static void pnx8550fb_setup_scart(void)
 {
-	struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP0105_BUS1);
+	struct i2c_adapter *adapter = i2c_get_adapter(I2C_SCART_BUS);
 	if ((i2c_transfer(adapter, &pnx8550fb_scart_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error\n", __func__);
 }
@@ -215,7 +217,7 @@ static void pnx8550fb_setup_scart(void)
 /* Function used to switch the Scart switch back to power-up defaults */
 static void pnx8550fb_shutdown_scart(void)
 {
-	struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP0105_BUS1);
+	struct i2c_adapter *adapter = i2c_get_adapter(I2C_SCART_BUS);
 	if ((i2c_transfer(adapter, &pnx8550fb_shutdown_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error\n", __func__);
 }
@@ -233,7 +235,7 @@ void pnx8550fb_set_volume(int volume)
 		vol = AK4705_VOL_MAX;
 	pnx8550fb_scart_volume[1] = vol;
 	
-	adapter = i2c_get_adapter(PNX8550_I2C_IP0105_BUS1);
+	adapter = i2c_get_adapter(I2C_SCART_BUS);
 	if ((i2c_transfer(adapter, &pnx8550fb_volume_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error\n", __func__);
 }
@@ -249,7 +251,7 @@ static void pnx8550fb_setup_anabel(int pal)
 {
     int i, len;
     const unsigned char *data;
-    struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
+    struct i2c_adapter *adapter = i2c_get_adapter(I2C_ANABEL_BUS);
 
     if (pal) {
 		data = pnx8550fb_anabel_pal;
@@ -272,7 +274,7 @@ static void pnx8550fb_setup_anabel(int pal)
 /* Function used to set up PAL/NTSC using Anabel */
 void pnx8550fb_set_blanking(int blank)
 {
-    struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
+    struct i2c_adapter *adapter = i2c_get_adapter(I2C_ANABEL_BUS);
 
     if (blank)
 		pnx8550fb_anabel_msg.buf = (unsigned char *) pnx8550fb_anabel_blank;
@@ -340,13 +342,13 @@ static void pnx8550fb_setup_QVCP(unsigned int buffer, int pal)
     outl(0x803F3F3F, PCI_BASE | 0x10e074);
     // set layer base address and size
     outl(buffer, PCI_BASE | 0x10e200);
-    outl(PNX8550_FRAMEBUFFER_STRIDE*4, PCI_BASE | 0x10e204);
-    outl(PNX8550_FRAMEBUFFER_STRIDE*2, PCI_BASE | 0x10e208);
-    outl(buffer + (PNX8550_FRAMEBUFFER_STRIDE*2), PCI_BASE | 0x10e20c);
-    outl(PNX8550_FRAMEBUFFER_STRIDE*4, PCI_BASE | 0x10e210);
+    outl(PNX8550FB_STRIDE*4, PCI_BASE | 0x10e204);
+    outl(PNX8550FB_STRIDE*2, PCI_BASE | 0x10e208);
+    outl(buffer + (PNX8550FB_STRIDE*2), PCI_BASE | 0x10e20c);
+    outl(PNX8550FB_STRIDE*4, PCI_BASE | 0x10e210);
     outl(8, PCI_BASE | 0x10e214);
     outl(0x80000000 | (16<<16)|(0x30), PCI_BASE | 0x10e230);
-    outl(PNX8550_FRAMEBUFFER_WIDTH, PCI_BASE | 0x10e2b4);
+    outl(PNX8550FB_WIDTH, PCI_BASE | 0x10e2b4);
     // set pixel format
     outl(0x20, PCI_BASE | 0x10e23c);
     outl(0x0, PCI_BASE | 0x10e238);
@@ -408,7 +410,7 @@ static struct i2c_msg pnx8550fb_anabel2_msg = {
 /* shuts down the secondary QVCP and the unused parts of Anabel */
 static void pnx8550fb_shutdown_unused(void)
 {
-    struct i2c_adapter *adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
+    struct i2c_adapter *adapter = i2c_get_adapter(I2C_ANABEL_BUS);
 
 	// shutdown PNX8510 second video channel
 	pnx8550fb_anabel2_msg.buf = (unsigned char *) pnx8550fb_anabel2_shutdown;

@@ -44,12 +44,12 @@ static struct fb_fix_screeninfo fix = {
 	.type =        FB_TYPE_PACKED_PIXELS,
 	.visual =      FB_VISUAL_TRUECOLOR,
 	.accel =       FB_ACCEL_NONE,
-	.line_length = PNX8550_FRAMEBUFFER_LINE_SIZE,
+	.line_length = PNX8550FB_LINE_SIZE,
 };
 
 static struct fb_var_screeninfo def = {
-	.xres_virtual =   PNX8550_FRAMEBUFFER_WIDTH,
-	.yres_virtual =   PNX8550_FRAMEBUFFER_HEIGHT_PAL,
+	.xres_virtual =   PNX8550FB_WIDTH,
+	.yres_virtual =   PNX8550FB_HEIGHT_PAL,
 	.bits_per_pixel = 32,
 	.red =            { 16, 8, 0 },
 	.green =          { 8,  8, 0 },
@@ -60,14 +60,14 @@ static struct fb_var_screeninfo def = {
 	.width =          -1,
 	// these borders are nonsense for both PAL and NTSC, but provide a
 	// centered initial display
-	.left_margin =    PNX8550_FRAMEBUFFER_MARGIN_LEFT,
-	.right_margin =   PNX8550_FRAMEBUFFER_MARGIN_RIGHT,
-	.upper_margin =   PNX8550_FRAMEBUFFER_MARGIN_UPPER_PAL,
-	.lower_margin =   PNX8550_FRAMEBUFFER_MARGIN_LOWER_PAL,
+	.left_margin =    PNX8550FB_MARGIN_LEFT,
+	.right_margin =   PNX8550FB_MARGIN_RIGHT,
+	.upper_margin =   PNX8550FB_MARGIN_UPPER_PAL,
+	.lower_margin =   PNX8550FB_MARGIN_LOWER_PAL,
 	// at least make sure the timings are correct
 	.pixclock =       74074,
-	.hsync_len =      PNX8550_FRAMEBUFFER_HSYNC_PAL,
-	.vsync_len =      PNX8550_FRAMEBUFFER_VSYNC_PAL,
+	.hsync_len =      PNX8550FB_HSYNC_PAL,
+	.vsync_len =      PNX8550FB_VSYNC_PAL,
 	.sync =           FB_SYNC_BROADCAST,
 	.vmode =          FB_VMODE_INTERLACED,
 };
@@ -221,7 +221,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	par = info->par;
 	par->base = NULL;
 
-	fb_ptr = dma_alloc_noncoherent(&dev->dev, PNX8550_FRAMEBUFFER_SIZE,
+	fb_ptr = dma_alloc_noncoherent(&dev->dev, PNX8550FB_SIZE,
 					&fb_base, GFP_USER);
 	if (!fb_ptr) {
 		printk(KERN_ERR "pnx8550fb failed to allocate screen memory\n");
@@ -230,7 +230,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	}
 	par->iobase = fb_base;
 	par->base = fb_ptr;
-	par->size = PNX8550_FRAMEBUFFER_SIZE;
+	par->size = PNX8550FB_SIZE;
 	
 	info->fbops = &ops;
 	info->var = def;
@@ -251,10 +251,10 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 
 	// only enable display once the driver is already registered
 	pnx8550fb_setup_display(fb_base,
-			def.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL);
+			def.yres_virtual == PNX8550FB_HEIGHT_PAL);
 	printk(KERN_INFO "fb%d: PNX8550-STB810 %s framebuffer at 0x%08x / %08x\n",
 			info->node,
-			(def.yres_virtual == PNX8550_FRAMEBUFFER_HEIGHT_PAL) ? "PAL" : "NTSC",
+			(def.yres_virtual == PNX8550FB_HEIGHT_PAL) ? "PAL" : "NTSC",
 			(unsigned int) fb_base, (unsigned int) fb_ptr);
 	return 0;
 }
@@ -274,7 +274,7 @@ static int pnx8550_framebuffer_remove(struct platform_device *dev)
 
 		pnx8550_framebuffer_shutdown(dev);
 		if (par->base)
-			dma_free_noncoherent(&dev->dev, PNX8550_FRAMEBUFFER_SIZE,
+			dma_free_noncoherent(&dev->dev, PNX8550FB_SIZE,
 					par->base, GFP_USER);
 
 		unregister_framebuffer(info);
@@ -304,18 +304,18 @@ static int __init pnx8550_framebuffer_init(void)
 	if (option) {
 		// parse standard and set correct vertical parameters
 		if (!strncasecmp(option, "ntsc", 4)) {
-			def.yres_virtual = PNX8550_FRAMEBUFFER_HEIGHT_NTSC;
-			def.upper_margin = PNX8550_FRAMEBUFFER_MARGIN_UPPER_NTSC;
-			def.lower_margin = PNX8550_FRAMEBUFFER_MARGIN_LOWER_NTSC;
-			def.vsync_len = PNX8550_FRAMEBUFFER_VSYNC_NTSC;
-			def.hsync_len = PNX8550_FRAMEBUFFER_HSYNC_NTSC;
+			def.yres_virtual = PNX8550FB_HEIGHT_NTSC;
+			def.upper_margin = PNX8550FB_MARGIN_UPPER_NTSC;
+			def.lower_margin = PNX8550FB_MARGIN_LOWER_NTSC;
+			def.vsync_len = PNX8550FB_VSYNC_NTSC;
+			def.hsync_len = PNX8550FB_HSYNC_NTSC;
 			option += 4;
 		} else if (!strncasecmp(option, "pal", 3)) {
-			def.yres_virtual = PNX8550_FRAMEBUFFER_HEIGHT_PAL;
-			def.upper_margin = PNX8550_FRAMEBUFFER_MARGIN_UPPER_PAL;
-			def.lower_margin = PNX8550_FRAMEBUFFER_MARGIN_LOWER_PAL;
-			def.vsync_len = PNX8550_FRAMEBUFFER_VSYNC_PAL;
-			def.hsync_len = PNX8550_FRAMEBUFFER_HSYNC_PAL;
+			def.yres_virtual = PNX8550FB_HEIGHT_PAL;
+			def.upper_margin = PNX8550FB_MARGIN_UPPER_PAL;
+			def.lower_margin = PNX8550FB_MARGIN_LOWER_PAL;
+			def.vsync_len = PNX8550FB_VSYNC_PAL;
+			def.hsync_len = PNX8550FB_HSYNC_PAL;
 			option += 3;
 		}
 
