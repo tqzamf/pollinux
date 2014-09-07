@@ -159,11 +159,11 @@ static const unsigned char pnx8550fb_anabel_unblank[] =
 static const unsigned char pnx8550fb_scart_data[] = {
     0x00, // address byte: start with first register
     0x70, // STBY, MUTE, DAPD=normal operation, manual startup, audio 24-bit I²S without de-emphasis
-    0x64, // main audio = stereo from DAC, unused audio = mute, main volume unmuted
+    0x74, // main audio = stereo DAC, VCR SCART audio = stereo DAC, main volume unmuted
     0x00, // main volume muted (until the audio driver loads and sets the default volume)
-    0x27, // main volume transition = 2048ck, DAC volume = ±0dB, unused audio = stereo
-    0x11, // SCART = encoder CVBS + RGB, S-Video = encoder Y+C, RCA = encoder CVBS
-    0x5F, // TV CVBS, R, G, B, FB = enabled, S-Video CVBS = enabled, S-Video C = disabled
+    0x27, // main volume transition = 2048ck, DAC volume = ±0dB, VCR SCART audio = stereo
+    0x09, // TV SCART = encoder CVBS + RGB, VCR SCART = encoder CVBS, composite = encoder CVBS
+    0x5F, // TV CVBS, R, G, B, FB = enabled, VCR CVBS = enabled, VCR C = disabled
     0x04, // RGB gain +6dB, DC restore = encoder CVBS, VCR clamp = Y/C, encoder clamp = RGB
     0x8D, // TV FB = +4V, TV SB = output +12V, VCR SB = input
     0x00, // (readonly status register)
@@ -435,14 +435,23 @@ static void pnx8550fb_shutdown_unused(void)
 	if ((i2c_transfer(adapter, &pnx8550fb_anabel2_msg, 1)) != 1)
 		printk(KERN_ERR "%s: write error for CLOCK2\n", __func__);
 
+    // Make sure the QVCP's output clock is enabled. If it isn't, any
+    // access to the DACs will hang the system, regardless of any
+    // configured bus timeouts!
+    PNX8550_CM_QVCP2_OUT_CTL = PNX8550_CM_TM_CLK_ENABLE | PNX8550_CM_TM_CLK_PLL;
+    // put the DACs into power-down mode
+    PNX8550FB_QVCP2_DAC_REG(0xa5) = 0x01;
 	// disable timing generator, and thus all layers
     outl(0x00000000, PCI_BASE | 0x10f020);
-    // power-down
+    // power-down the module
     outl(0x80000000, PCI_BASE | 0x10fff4);
-    // Stop the clock to the QVCP #2 to shut it down completely.
-    PNX8550_CM_QVCP2_OUT_CTL = 0;
+    // Stop the unnecessary clocks to the QVCP to shut it down
+    // completely. The output clock to the DACs must remain running.
     PNX8550_CM_QVCP2_PIX_CTL = 0;
     PNX8550_CM_QVCP2_PROC_CTL = 0;
+    // Power down the PLL as well. This is safe even though it is used
+    // as the clock source to the DACs, because it still outputs a
+    // standby clock (~1.6MHz) when powered down.
     PNX8550_CM_PLL3_CTL = PNX8550_CM_PLL_POWERDOWN;
 }
 
