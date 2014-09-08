@@ -118,6 +118,7 @@
 #define PNX8550_CM_VIP2_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x604)
 #define PNX8550_CM_MSP1_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x800)
 #define PNX8550_CM_MSP2_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x804)
+#define PNX8550_CM_TSTAMP_CTL *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb30)
 #define PNX8550_CM_TSDMA_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb34)
 #define PNX8550_CM_DVDCSS_CTL *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb3c)
 
