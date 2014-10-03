@@ -17,13 +17,13 @@
 
 #include <asm/bootinfo.h>
 #include <uart.h>
+#include <prom.h>
 
 /* #define DEBUG_CMDLINE */
 
-extern int prom_argc;
-extern char **prom_argv, **prom_envp;
-char putchar_buf[1024];
-int prom_flushed = 1;
+char prom_mtdparts[1024];
+static char putchar_buf[1024];
+static int prom_flushed = 1;
 
 typedef struct
 {
@@ -70,6 +70,15 @@ char *prom_getenv(char *envname)
 		env++;
 	}
 	return(NULL);
+}
+
+void __init prom_init_mtdparts(void)
+{
+	// if "mtdparts" was passed by U-Boot, save its value so it can be
+	// used by the MTD driver
+	char *c = prom_getenv("mtdparts");
+	if (c)
+		strncpy(prom_mtdparts, c, sizeof(prom_mtdparts) - 1);
 }
 
 inline unsigned char str2hexnum(unsigned char c)

@@ -27,6 +27,7 @@
 #include <asm/reboot.h>
 #include <glb.h>
 #include <standbyctl.h>
+#include <prom.h>
 
 void pnx8550_machine_restart(char *command)
 {

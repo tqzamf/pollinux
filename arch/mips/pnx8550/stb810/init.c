@@ -26,15 +26,12 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <asm/mach-pnx8550/glb.h>
+#include <prom.h>
 
 #define HAVE_SD_DISPLAY 1
 
 int prom_argc;
 char **prom_argv, **prom_envp;
-extern void  __init prom_init_cmdline(void);
-extern char *prom_getenv(char *envname);
-extern char *prom_getcmdline(void);
-extern unsigned long get_system_mem_size(void);
 #if HAVE_SD_DISPLAY
 extern void pnx8550_setupDisplay(int pal, int high_mem, unsigned int background);
 #endif
@@ -80,8 +77,9 @@ void __init prom_init(void)
     prom_argc = (int) fw_arg0;
     prom_argv = (char **) fw_arg1;
     prom_envp = (char **) fw_arg2;
-
     prom_init_cmdline();
+    prom_init_mtdparts();
+    
     /* Determine the amount of memory to allocate to the kernel, and do so. */
     mem_size = get_system_mem_size() / (1024 * 1024);
 #ifndef STB810_MIPS_MEM_SIZE
