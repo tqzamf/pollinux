@@ -44,6 +44,7 @@ Project include files:
 -------------------------------------------------------------------------------
 */
 #include <linux/i2c.h>
+#include <asm/mach-pnx8550/i2c.h>
 #include "i2c-ip0105.h"
 #include <asm/irq.h>
 #include <asm/uaccess.h>
@@ -84,6 +85,7 @@ Project include files:
 
 #define I2CADDRESS( address )       ((address) & 0x00FE) /* only 7 bits I2C address implemented */
 #define TIMER_OFF                   0
+#define I2C_IP0105_SLAVE_BUFFER_SIZE 128
 
 
 typedef enum
@@ -111,11 +113,11 @@ struct I2cBusObject
 //    int     mst_timeout;
 //    BOOL    mst_timeout_valid;
 
-    unsigned char    * slv_buf; /* Slave mode variables */
-    int     slv_bufsize;
+    unsigned char    slv_buf[I2C_IP0105_SLAVE_BUFFER_SIZE]; /* Slave mode variables */
     int     slv_buflen;
     int     slv_bufindex;
-    BOOL    slv_enabled;
+    i2c_ip0105_callback    slv_callback;
+    struct device *slv_device;
 //    int     slv_timer;
 //    int     slv_timeout;
 //    BOOL    slv_timeout_valid;
@@ -124,7 +126,6 @@ struct I2cBusObject
     I2cMode mode;
     int     isr_event;
 //    BOOL    bus_blocked;
-    struct  fasync_struct ** slv_usr_notify;
 };
 
 /* declaration of static functions */
@@ -243,7 +244,7 @@ static void recover_from_hardware_error(struct i2c_adapter * i2c_adap)
                 enable_irq(busptr->int_pin);  //isv_SwExtSet( INTERRUPT_ID( device ) );
                 wake_up_interruptible(&(busptr->iic_wait_master));
         }
-        if ( busptr->slv_enabled )
+        if ( busptr->slv_callback != NULL )
         {
                 AAOUT( busptr, 1 ); /* ACK bit will be returned after slave address reception */
         }
@@ -279,8 +280,8 @@ static __inline void iic_interrupt_idle(struct i2c_adapter * i2c_adap, struct I2
                 CLEAR_I2C_INTERRUPT( busptr ); /* Reset interrupt */
                 break;
         case 0x60: /* Own SLA+W has been received; ACK has been returned */
-                busptr->slv_bufindex = 1; /* reset buffer pointer !!! */
-                AAOUT( busptr, busptr->slv_enabled ); /* ACK bit will be returned after next byte reception */
+                busptr->slv_bufindex = 0; /* reset buffer pointer !!! */
+                AAOUT( busptr, busptr->slv_callback != NULL ); /* ACK bit will be returned after next byte reception */
                 busptr->mode = SlaveReceiver;
 
 //                Todo : Start timeout timer in tasklet
@@ -373,7 +374,7 @@ static __inline void iic_interrupt_master_transmitter(struct i2c_adapter * i2c_a
                 STAOUT( busptr, 1 ); /* Retry the master operation */
                 busptr->mst_txbufindex = 0;
                 busptr->mst_rxbufindex = 0;
-                AAOUT( busptr, busptr->slv_enabled ); /* ACK bit will be returned, or not, after slave address reception */
+                AAOUT( busptr, busptr->slv_callback != NULL ); /* ACK bit will be returned, or not, after slave address reception */
                 CLEAR_I2C_INTERRUPT( busptr ); /* Reset interrupt */
                 break;
 
@@ -382,8 +383,8 @@ static __inline void iic_interrupt_master_transmitter(struct i2c_adapter * i2c_a
                 busptr->mst_txbufindex = 0;
                 busptr->mst_rxbufindex = 0;
 
-                busptr->slv_bufindex = 1; /* reset buffer pointer !!! */
-                AAOUT( busptr, busptr->slv_enabled ); /* ACK bit will be returned, or not, after next byte reception */
+                busptr->slv_bufindex = 0; /* reset buffer pointer !!! */
+                AAOUT( busptr, busptr->slv_callback != NULL ); /* ACK bit will be returned, or not, after next byte reception */
                 busptr->mode = SlaveReceiver;
 
 //                Todo : Start timeout timer in tasklet
@@ -425,7 +426,7 @@ static __inline void iic_interrupt_master_receiver(struct i2c_adapter * i2c_adap
                 STAOUT( busptr, 1 ); /* Retry the master operation */
                 busptr->mst_txbufindex = 0;
                 busptr->mst_rxbufindex = 0;
-                AAOUT( busptr, busptr->slv_enabled); /* ACK bit will be returned, or not, after slave address reception */
+                AAOUT( busptr, busptr->slv_callback != NULL); /* ACK bit will be returned, or not, after slave address reception */
                 CLEAR_I2C_INTERRUPT( busptr ); /* Reset interrupt */
                 break;
 
@@ -473,7 +474,7 @@ dev_dbg(&i2c_adap->dev, "received byte %x\n", *(busptr->mst_rxbuf + busptr->mst_
                         (void)READ_IP0105_I2C_DAT(busptr);
 dev_dbg(&i2c_adap->dev, "ignore received byte\n");
                 }
-                AAOUT( busptr, busptr->slv_enabled ); /* ACK bit will be returned, or not, after slave address reception */
+                AAOUT( busptr, busptr->slv_callback != NULL ); /* ACK bit will be returned, or not, after slave address reception */
                 STAOUT( busptr, 0 ); /* Don't generate (repeated) START condition */
                 STOOUT( busptr, 1 ); /* Generate STOP condition */
                 busptr->mode = Idle;
@@ -487,8 +488,8 @@ dev_dbg(&i2c_adap->dev, "ignore received byte\n");
                 busptr->mst_txbufindex = 0;
                 busptr->mst_rxbufindex = 0;
 
-                busptr->slv_bufindex = 1; /* reset buffer pointer !!! */
-                AAOUT( busptr, busptr->slv_enabled ); /* ACK bit will be returned, or not, after next byte reception */
+                busptr->slv_bufindex = 0; /* reset buffer pointer !!! */
+                AAOUT( busptr, busptr->slv_callback != NULL ); /* ACK bit will be returned, or not, after next byte reception */
                 busptr->mode = SlaveReceiver;
 
 //                Todo : Start timeout timer in tasklet
@@ -523,7 +524,7 @@ static __inline void iic_interrupt_slave_receiver(struct i2c_adapter * i2c_adap,
         switch (i2c_state)
 		{
         case 0x80: /* Previously addressed with own SLA; DATA byte has been received; ACK has been returned */
-                if( busptr->slv_bufindex < busptr->slv_bufsize )
+                if( busptr->slv_bufindex < I2C_IP0105_SLAVE_BUFFER_SIZE )
                 {
                         *( busptr->slv_buf + busptr->slv_bufindex++ ) = READ_IP0105_I2C_DAT(busptr);
                 }
@@ -531,13 +532,13 @@ static __inline void iic_interrupt_slave_receiver(struct i2c_adapter * i2c_adap,
                 {
                         (void)READ_IP0105_I2C_DAT(busptr);
                 }
-                AAOUT( busptr, busptr->slv_enabled ); /* ACK bit will be returned, or not, after next byte reception */
+                AAOUT( busptr, busptr->slv_callback != NULL ); /* ACK bit will be returned, or not, after next byte reception */
 
                 CLEAR_I2C_INTERRUPT( busptr );  /* Reset i2c interrupt */
 				break;
 
         case 0x88: /* Previously addressed with own SLA; DATA byte has been received; NOT ACK has been returned */
-                if ( busptr->slv_bufindex < busptr->slv_bufsize )
+                if ( busptr->slv_bufindex < I2C_IP0105_SLAVE_BUFFER_SIZE )
                 {
                         *( busptr->slv_buf + busptr->slv_bufindex++ ) = READ_IP0105_I2C_DAT(busptr);
                 }
@@ -546,7 +547,7 @@ static __inline void iic_interrupt_slave_receiver(struct i2c_adapter * i2c_adap,
                         (void)READ_IP0105_I2C_DAT(busptr);
                 }
 
-                AAOUT( busptr, busptr->slv_enabled ); /* ACK bit will be returned, or not, after slave address reception */
+                AAOUT( busptr, busptr->slv_callback != NULL ); /* ACK bit will be returned, or not, after slave address reception */
                 CLEAR_I2C_INTERRUPT( busptr );    /* reset i2c interrupt */
 				break;
 
@@ -589,7 +590,7 @@ static __inline void iic_interrupt_slave_transmitter(struct i2c_adapter * i2c_ad
                 break;
 
         case 0xB8: /* Data byte in I2DAT has been transmitted; ACK has been received */
-                if ( busptr->slv_bufindex < busptr->slv_bufsize )
+                if ( busptr->slv_bufindex < I2C_IP0105_SLAVE_BUFFER_SIZE )
                 {
                         WRITE_IP0105_I2C_DAT(busptr, *( busptr->slv_buf + busptr->slv_bufindex ));
                         busptr->slv_bufindex++;
@@ -616,7 +617,7 @@ static __inline void iic_interrupt_slave_transmitter(struct i2c_adapter * i2c_ad
         case 0xC0: /* Data byte in I2DAT has been transmitted; NOT ACK has been received */
 				/* fall through; */
         case 0xC8: /* Last data byte in I2DAT has been transmitted (AA=0); ACK has been received */
-                AAOUT( busptr, busptr->slv_enabled ); /* ACK bit will be returned, or not, after slave address reception */
+                AAOUT( busptr, busptr->slv_callback != NULL ); /* ACK bit will be returned, or not, after slave address reception */
 
                 busptr->isr_event |= evSlaveTransmitterReady;
                 slave_device = i2c_adap;
@@ -694,20 +695,16 @@ static void do_slave_tasklet(unsigned long unused)
                 if (busptr->isr_event & evSlaveStopCondition)
                 {
                         dev_dbg(&slave_device->dev, "Slave Receiver : SlaveStopCondition\n");
-                        if (busptr->slv_usr_notify)
+                        if (busptr->slv_callback != NULL)
                         {
-dev_dbg(&slave_device->dev, "Slave Receiver : Sending kill\n");
-                                kill_fasync(busptr->slv_usr_notify, SIGIO, POLL_IN);
-                        }
-                        else  if (busptr->slv_enabled)
-                        {
-dev_dbg(&slave_device->dev, "Slave Receiver : AAOUT\n");
-                                AAOUT(busptr, 1);
+                                busptr->slv_callback(busptr->slv_device, busptr->slv_buf, busptr->slv_bufindex);
                         }
 
-dev_dbg(&slave_device->dev, "Slave Receiver : Idle\n");
+						dev_dbg(&slave_device->dev, "Slave Receiver : Idle\n");
                         busptr->mode = Idle;
                         busptr->isr_event &= ~evSlaveStopCondition;
+						dev_dbg(&slave_device->dev, "Slave Receiver : AAOUT\n");
+                        AAOUT(busptr, busptr->slv_callback != NULL);
                 }
 
         }
@@ -811,7 +808,7 @@ dev_dbg(&i2c_adap->dev, "int_status = 0x%x\n", READ_IP0105_I2C_INT_STATUS(busptr
     /*  re-init again */
     ENABLE_I2C_CONTROLLER(busptr);
     ENABLE_I2C_INTERRUPT(busptr);
-    if (busptr->slv_enabled == TRUE)
+    if (busptr->slv_callback != NULL)
     {
         AAOUT(busptr, 1);
     }
@@ -830,12 +827,9 @@ static void ip0105_init(struct i2c_adapter * i2c_adap, int device)
         busptr->isr_event         = 0; /* Clear all event flags(bits) */
 //        busptr->bus_blocked       = FALSE;
 
-        busptr->slv_enabled       = FALSE;
-        busptr->slv_buf           = NULL; // SlaveBuffer[device];
+        busptr->slv_callback      = NULL;
         busptr->slv_bufindex      = 0;
         busptr->slv_buflen        = 0;
-        busptr->slv_bufsize       = 0; // SLAVE_BUF_SIZE;
-        busptr->slv_usr_notify    = NULL;
 
 //        busptr->mst_timer         = TIMER_OFF;
 //        busptr->mst_timeout       = TIMER_OFF;
@@ -998,6 +992,41 @@ static int ip0105_xfer(struct i2c_adapter *i2c_adap, struct i2c_msg msgs[], int 
 static u32 ip0105_func(struct i2c_adapter *adap)
 {
         return I2C_FUNC_SMBUS_EMUL | I2C_FUNC_PROTOCOL_MANGLING | I2C_FUNC_I2C;
+}
+
+int ip0105_set_slave_callback(struct i2c_adapter *i2c_adap, unsigned int addr,
+		struct device *device, i2c_ip0105_callback callback)
+{
+	struct I2cBusObject * busptr =  (struct I2cBusObject *)i2c_adap->algo_data;
+	int i, ok;
+
+	// check that the adapter given is actually one of ours
+	ok = 0;
+	for (i = 0; i < NR_I2C_DEVICES; i++)
+		if (busptr == &ip0105_i2cbus[i]) {
+			ok = 1;
+			break;
+		}
+	if (!ok)
+		return -EINVAL;
+
+	if (callback != NULL) {
+		WRITE_IP0105_I2C_ADDRESS(busptr, I2CADDRESS(addr << 1));
+		dev_dbg(&i2c_adap->dev, "Set Own adress to %x\n", READ_IP0105_I2C_ADDRESS(busptr));
+		busptr->slv_bufindex = 0;
+		busptr->slv_callback = callback;
+		busptr->slv_device = device;
+		AAOUT( busptr, 1 ); /* ACK bit will be returned after slave address reception */
+		dev_dbg(&i2c_adap->dev, "Enable Slave\n");
+	} else {
+		AAOUT( busptr, 0 ); /* ACK will not be sent after slave address reception */
+		busptr->slv_callback = NULL;
+		busptr->slv_device = NULL;
+		busptr->slv_bufindex  = 0;
+		dev_dbg(&i2c_adap->dev, "Disable Slave\n");
+	}
+
+	return 0;
 }
 
 /* -----exported algorithm data: -------------------------------------  */

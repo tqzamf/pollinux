@@ -17,6 +17,8 @@
 #include <gpio.h>
 #include <linux/platform_device.h>
 #include <linux/leds.h>
+#include <linux/i2c.h>
+#include <asm/mach-pnx8550/i2c.h>
 
 #define CMD_SET_DIGITS(num) \
 		(0x00 | ((num - 4) & 3))
@@ -454,6 +456,7 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 	// set brightness to maximum
 	pnx8550_frontpanel_set_brightness(15);
 	
+	// frontpanel LEDs
 	res = led_classdev_register(&pdev->dev, &pnx8550_frontpanel_led_upper);
 	res += led_classdev_register(&pdev->dev, &pnx8550_frontpanel_led_lower);
 	if (res) {
@@ -462,6 +465,7 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 		return 1;
 	}
 
+	// sysfs files
 	res = sysfs_create_bin_file(&pdev->dev.kobj, &raw);
 	res += sysfs_create_bin_file(&pdev->dev.kobj, &charmap);
 	res += sysfs_create_bin_file(&pdev->dev.kobj, &command);
