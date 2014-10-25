@@ -159,6 +159,11 @@ static struct platform_device frontpanel_device = {
 	.dev.platform_data	= &pnx8550_frontpanel_base,
 };
 
+static struct platform_device frontpanel_buttons_device = {
+	.name		= "frontpanel-buttons",
+	.id			= -1,
+};
+
 static int pnx8550_smartcard_base = PNX8550_GPIO_SC1_VCC;
 
 static struct platform_device smartcard_device = {
@@ -192,6 +197,7 @@ int __init pnx8550_gpio_init(void)
 		// register frontpanel display
 		pnx8550_frontpanel_base += pnx8550_gpio_chip.base;
 		platform_device_register(&frontpanel_device);
+		platform_device_register(&frontpanel_buttons_device);
 		// register smartcard GPIO controller
 		pnx8550_smartcard_base += pnx8550_gpio_chip.base;
 		platform_device_register(&smartcard_device);
