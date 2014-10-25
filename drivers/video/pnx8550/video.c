@@ -261,8 +261,12 @@ static void pnx8550fb_hw_suspend(int scart)
 
     // power-down the QVCP module (good measure when stopping the clocks)
     PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) = PNX8550_DCSN_POWERDOWN_CMD;
-    // stop QVCP clocks, but leave the PLL running so it remains locked
-    PNX8550_CM_QVCP1_OUT_CTL = 0;
+    // stop QVCP clocks. we cannot shut down the output clock else the
+    // Anabel stops responding to I²C commands, so we just leave the PLL
+    // and output clock running instead. doesn't seem to draw any more
+    // power than stopping it.
+    PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_27MHZ;
+    PNX8550_CM_QVCP1_OUT_CTL = PNX8550_CM_TM_CLK_ENABLE | PNX8550_CM_TM_CLK_PLL;
     PNX8550_CM_QVCP1_PIX_CTL = 0;
     PNX8550_CM_QVCP1_PROC_CTL = 0;
 }
@@ -408,8 +412,6 @@ static void pnx8550fb_shutdown_qvcp(void)
 {
 	// disable timing generator, and thus reset all layers
     PNX8550FB_QVCP1_REG(0x020) = 0x00000000;
-	// power down the PLL as well
-    PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_POWERDOWN;
 }
 
 // shuts down the secondary QVCP and the unused parts of Anabel
@@ -423,10 +425,12 @@ static void pnx8550fb_shutdown_unused(void)
 	pnx8550fb_set_reg(I2C_ANABEL_AUDIO1_ADDR, 0xfe, 0x00);
 	pnx8550fb_set_reg(I2C_ANABEL_AUDIO2_ADDR, 0xfe, 0x00);
 
-    // Make sure the QVCP's output clock is enabled. If it isn't, any
-    // access to the DACs will hang the system, regardless of any
-    // configured bus timeouts!
+    // Make sure the QVCP's output clock is enabled and available at the
+    // DACs. If it isn't, any access to the DACs will hang the system,
+    // regardless of any configured bus timeouts!
     PNX8550_CM_QVCP2_OUT_CTL = PNX8550_CM_TM_CLK_ENABLE | PNX8550_CM_TM_CLK_PLL;
+    udelay(300);
+
     // put the DACs into power-down mode
     PNX8550FB_QVCP2_DAC_REG(0xa5) = 0x01;
 	// disable timing generator, and thus all layers
