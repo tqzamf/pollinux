@@ -1,7 +1,8 @@
 
 # Makefile for the NXP STB810 Board.
 
-obj-y := init.o board_setup.o irqmap.o gif.o splash.o gpio.o frontpanel.o
+obj-y := init.o board_setup.o irqmap.o gif.o splash.o gpio.o frontpanel.o \
+	frontpanel_buttons.o
 
 #If we have defined anv ENV variable called STB810_MIPS_MEM_SIZE then pass it on to the
 #C code
