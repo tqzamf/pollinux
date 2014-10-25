@@ -160,12 +160,23 @@ static int pnx8550_frontpanel_buttons_setkeycode(struct input_dev *dev,
 			       unsigned int *old_keycode)
 {
 	struct pnx8550_frontpanel_buttons_data *data = input_get_drvdata(dev);
-	int16_t scancode;
+	int16_t scancode, i;
+	bool need_clear_bit = 1;
 
 	scancode = get_scancode(dev, ke);
 	if (scancode >= 0 && scancode < NUM_SCANCODES) {
+		// update keymap table
 		*old_keycode = data->keymap[scancode];
 		data->keymap[scancode] = ke->keycode;
+		// update declared keys
+		for (i = 0; i < NUM_SCANCODES; i++)
+			if (data->keymap[i] == ke->keycode) {
+				need_clear_bit = 0;
+				break;
+			}
+		if (need_clear_bit)
+			clear_bit(*old_keycode, dev->keybit);
+		set_bit(ke->keycode, dev->keybit);
 		return 0;
 	}
 
@@ -180,7 +191,7 @@ static void pnx8550_frontpanel_buttons_timeout(unsigned long device)
 	// release whichever key we are currently reporting as down. this
 	// shouldn't fire with a zero key, ever.
 	if (data->prev_key != 0) {
-		input_event(input, EV_KEY, data->prev_key, 0);
+		input_report_key(input, data->prev_key, 0);
 		input_sync(input);
 	}
 	data->prev_key = 0;
@@ -221,12 +232,12 @@ static void pnx8550_frontpanel_buttons_callback(struct device *device,
 	// end up skipping the release, press, or both.
 	if (key != data->prev_key) {
 		if (data->prev_key != 0) {
-			input_event(input, EV_KEY, data->prev_key, 0);
+			input_report_key(input, data->prev_key, 0);
 			input_sync(input);
 		}
 		data->prev_key = key;
 		if (key != 0) {
-			input_event(input, EV_KEY, key, 1);
+			input_report_key(input, key, 1);
 			input_sync(input);
 		}
 	}
@@ -244,6 +255,7 @@ static int __devinit pnx8550_frontpanel_buttons_probe(struct platform_device *pd
 {
 	struct input_dev *input;
 	struct pnx8550_frontpanel_buttons_data *data;
+	int i;
 
 	// create a local copy of the keymap, pretending that there could be
 	// more than a single instance of the driver.
@@ -273,6 +285,10 @@ static int __devinit pnx8550_frontpanel_buttons_probe(struct platform_device *pd
 	input->id.bustype = BUS_I2C;
 	input->setkeycode = pnx8550_frontpanel_buttons_setkeycode;
 	input->getkeycode = pnx8550_frontpanel_buttons_getkeycode;
+	// declare the events we fire
+	set_bit(EV_KEY, input->evbit);
+	for (i = 0; i < NUM_SCANCODES; i++)
+		set_bit(data->keymap[i], input->keybit);
 	if (input_register_device(input)) {
 		printk(KERN_ERR
 				"PNX8550 frontpanel failed to register input device\n");
@@ -289,7 +305,7 @@ static int __devinit pnx8550_frontpanel_buttons_probe(struct platform_device *pd
 	data->adap = i2c_get_adapter(STANDBY_MICRO_BUS);
 	if (ip0105_set_slave_callback(data->adap, STANDBY_MICRO_ADDR,
 			&pdev->dev, pnx8550_frontpanel_buttons_callback) != 0) {
-		printk(KERN_ERR "PNX8550 frontpanel failed to register button callback\n");
+		printk(KERN_ERR "PNX8550 frontpanel failed to register callback\n");
 		pnx8550_frontpanel_buttons_remove(pdev);
 		return -EIO;
 	}
