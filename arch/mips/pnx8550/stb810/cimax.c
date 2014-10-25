@@ -434,7 +434,7 @@ static const struct file_operations cimax_int_fops = {
 
 //////////////////// sysfs control interface ////////////////////
 
-static ssize_t power_store(struct device *dev,
+static ssize_t vcc_store(struct device *dev,
 			 struct device_attribute *attr,
 			 const char *buf, size_t size)
 {
@@ -461,7 +461,7 @@ static ssize_t power_store(struct device *dev,
 	
 	return size;
 }
-static ssize_t power_show(struct device *dev,
+static ssize_t vcc_show(struct device *dev,
 			     struct device_attribute *attr,
 			     char *buf)
 {
@@ -472,7 +472,7 @@ static ssize_t power_show(struct device *dev,
 		strcpy(buf, "off\n");
 	return strlen(buf);
 }
-static DEVICE_ATTR(power, 0600, power_show, power_store);
+static DEVICE_ATTR(vcc, 0600, vcc_show, vcc_store);
 
 static ssize_t reset_store(struct device *dev,
 			 struct device_attribute *attr,
@@ -850,6 +850,14 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 		return -EIO;
 	}
 	
+	res = cimax_devs_create();
+	if (res < 0) {
+		printk(KERN_ERR "%s: failed to register devices: %d\n", __func__,
+				res);
+		cimax_shutdown(pdev);
+		return res;
+	}
+
 	#define ADD_SYSFS_FILE(name) \
 		res = device_create_file(&pdev->dev, &dev_attr_##name); \
 		if (res) { \
@@ -858,20 +866,12 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 			cimax_remove(pdev); \
 			return res; \
 		}
-	ADD_SYSFS_FILE(power);
+	ADD_SYSFS_FILE(vcc);
 	ADD_SYSFS_FILE(reset);
 	ADD_SYSFS_FILE(am_timing);
 	ADD_SYSFS_FILE(cm_timing);
 	ADD_SYSFS_FILE(address_space);
 	ADD_SYSFS_FILE(presence);
-	
-	res = cimax_devs_create();
-	if (res < 0) {
-		printk(KERN_ERR "%s: failed to register devices: %d\n", __func__,
-				res);
-		cimax_shutdown(pdev);
-		return res;
-	}
 
 	printk(KERN_INFO "CIMaX at %08x, i2c address %02x, irq %d\n",
 			chip.base, chip.i2c_addr, chip.irq);
