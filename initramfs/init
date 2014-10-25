@@ -67,7 +67,7 @@ while ! [ -x "/root/sbin/init" ]; do
 	setsid cttyhack ash
 done
 # init appears to be usable. try switching to it. if this fails, that's
-# a kernel panic.
+# a kernel panic, but we cannot really prevent it.
 echo boot >/sys/devices/platform/frontpanel/ascii
 mount -o bind /dev /root/dev
 mount -o bind /proc /root/proc

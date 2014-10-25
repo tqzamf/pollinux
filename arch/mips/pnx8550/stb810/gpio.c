@@ -178,8 +178,10 @@ int __init pnx8550_gpio_init(void)
 	for (pin = 0; pin < PNX8550_GPIO_COUNT; pin++)
 		if (pnx8550_gpio_config[pin] == IN)
 			PNX8550_GPIO_SET_IN(pin);
-	// switch off the red CPU led to signal that linux has booted
+	// switch off all CPU LEDs to signal that linux has booted
 	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_CPU_RED);
+	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_CPU_GREEN);
+	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_CPU_BLUE);
 	
 	res = gpiochip_add(&pnx8550_gpio_chip);
 	if (res == 0) {
