@@ -349,16 +349,37 @@ static struct bin_attribute charmap = {
 };
 
 // ASCII-mapped output. write-only; writing just stores to the raw memory
-// going through the character map. only writes to the digits part of
-// display memory. remaining digits are filled up with spaces.
+// going through the character map. remaining digits are filled up with
+// spaces.
+// writes out dots by setting the decimal points in display memory if
+// possible. if the display is flipped, only writes to the digits part
+// of display memory.
 static ssize_t ascii_store(struct device *dev,
 			   struct device_attribute *attr,
 			   const char *buf, size_t size)
 {
-	int i;
+	int i, dot = 1, digit = 0;
 	memset(pnx8550_frontpanel_digits, 0, 4);
-	for (i = 0; i < 4 && i < size; i++)
-		pnx8550_frontpanel_digits[i] = map_to_seg7(&pnx8550_frontpanel_charmap, buf[i]);
+	if (!flip)
+		pnx8550_frontpanel_dots = 0;
+	for (i = 0; i < size && digit < 5; i++) {
+		if (!flip && buf[i] == '.') {
+			if (dot == 0)
+				// don't use up a digit; instead just switch on the dot
+				// between digits.
+				// however, if the last character already was a dot, do
+				// use a digit and output a space. this looks less
+				// ridiculous than writing out a dot.
+				digit--;
+			dot = 1;
+			pnx8550_frontpanel_dots |= 1 << digit;
+		} else if (digit < 4) {
+			dot = 0;
+			pnx8550_frontpanel_digits[digit] =
+				map_to_seg7(&pnx8550_frontpanel_charmap, buf[i]);
+		}
+		digit++;
+	}
 	pnx8550_frontpanel_update_display();
 	return size;
 }
