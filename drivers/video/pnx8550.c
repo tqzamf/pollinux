@@ -31,10 +31,30 @@
 #include <dcsn.h>
 #include <cm.h>
 
+#define I2C_ANABEL_BUS                 PNX8550_I2C_IP3203_BUS1
+#define I2C_ANABEL_VIDEO_ADDR          0x66
+#define I2C_ANABEL_CLOCK_ADDR          0x76
+
+enum standard {
+	STD_UNDEFINED = 0,
+	STD_PAL,
+	STD_NTSC,
+};
+
 struct pnx8550fb_par {
 	dma_addr_t iobase;
 	void __iomem *base;
 	unsigned int size;
+	void __iomem *mmio;
+	struct i2c_adapter *i2c;
+	uint8_t video_addr;
+	uint8_t clock_addr;
+	volatile unsigned long *out_clk;
+	volatile unsigned long *pix_clk;
+	volatile unsigned long *proc_clk;
+	volatile unsigned long *clk_pll;
+	volatile unsigned long *clk_dds;
+	enum standard std;
 	int xres;
 	int yres;
 	int left;
@@ -43,15 +63,12 @@ struct pnx8550fb_par {
 	int lower;
 };
 
-#define I2C_ANABEL_BUS                 PNX8550_I2C_IP3203_BUS1
-#define I2C_ANABEL_VIDEO_ADDR          0x66
-#define I2C_ANABEL_CLOCK_ADDR          0x76
-
 // sets a single register over I²C
-static void pnx8550fb_set_reg(unsigned char addr, unsigned char reg, unsigned char value)
+static void i2c_set_reg(struct i2c_adapter *bus, unsigned char addr,
+		unsigned char reg, unsigned char value)
 {
-	struct i2c_adapter *adapter;
     unsigned char data[2] = { reg, value };
+    int err;
 	struct i2c_msg msg = {
 		.addr = addr,
 		.flags = 0,
@@ -59,209 +76,211 @@ static void pnx8550fb_set_reg(unsigned char addr, unsigned char reg, unsigned ch
 		.buf = data,
 	};
 
-    adapter = i2c_get_adapter(I2C_ANABEL_BUS);
-	if (i2c_transfer(adapter, &msg, 1) != 1)
-		printk(KERN_ERR "%s: error writing device %02x register %02x\n",
-				__func__, addr, reg);
+	err = i2c_transfer(bus, &msg, 1);
+	if (err != 1)
+		printk(KERN_ERR
+			"%s: error %d writing device %02x register %02x = %02x\n",
+			__func__, err, addr, reg, value);
 }
 
 // sets a single register in the primary video channel of ANABEL
-static void pnx8550fb_anabel_set_reg(unsigned char reg, unsigned char value)
+static void anabel_video_set_reg(struct pnx8550fb_par *par,
+		unsigned char reg, unsigned char value)
 {
-	pnx8550fb_set_reg(I2C_ANABEL_VIDEO_ADDR, reg, value);
+	i2c_set_reg(par->i2c, par->video_addr, reg, value);
 }
 
+// sets a single register in the primary video channel of ANABEL
+static void anabel_clock_set_reg(struct pnx8550fb_par *par,
+		unsigned char reg, unsigned char value)
+{
+	i2c_set_reg(par->i2c, par->clock_addr, reg, value);
+}
+
+// sets a single register in the QVCP
+static void qvcp_set_reg(struct pnx8550fb_par *par,
+		unsigned int reg, uint32_t value)
+{
+	*((volatile uint32_t *) (par->mmio + reg)) = value;
+}
+
+// reads a single register in the QVCP
+static uint32_t qvcp_get_reg(struct pnx8550fb_par *par,
+		unsigned int reg)
+{
+	return *((volatile uint32_t *) (par->mmio + reg));
+}
+
+// sets a single QVCP clock register in the clock module
+#define qvcp_set_clock(par, reg, value) \
+	do { \
+		*((par)->reg) = (value); \
+	} while (0)
+
+
 // configures Anabel (PNX8510) for PAL/NTSC
-static void pnx8550fb_setup_anabel(int pal)
+static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 {
 	// the PNX8510 datasheet lists all undefined registers as "Must be
 	// initialized to zero". these are the ones that are actually
 	// initialized in the NXP splash screen code; the rest probably
 	// doesn't matter.
-	pnx8550fb_anabel_set_reg(0x60, 0x00);
-	pnx8550fb_anabel_set_reg(0x7d, 0x00);
+	anabel_video_set_reg(par, 0x60, 0x00);
+	anabel_video_set_reg(par, 0x7d, 0x00);
 
 	// disable insertion of wide screen signalling, copy guard,
 	// video progamming system, closed captioning & teletext
-	pnx8550fb_anabel_set_reg(0x27, 0x00);
-	pnx8550fb_anabel_set_reg(0x2c, 0x00);
-	pnx8550fb_anabel_set_reg(0x54, 0x00);
-	pnx8550fb_anabel_set_reg(0x6f, 0x00);
+	anabel_video_set_reg(par, 0x27, 0x00);
+	anabel_video_set_reg(par, 0x2c, 0x00);
+	anabel_video_set_reg(par, 0x54, 0x00);
+	anabel_video_set_reg(par, 0x6f, 0x00);
 
-    if (pal) {
+    if (par->std == STD_NTSC) {
 		// color burst config
-		pnx8550fb_anabel_set_reg(0x28, 0x21);
-		pnx8550fb_anabel_set_reg(0x29, 0x1d);
-		pnx8550fb_anabel_set_reg(0x5a, 0x00);
+		anabel_video_set_reg(par, 0x28, 0x25);
+		anabel_video_set_reg(par, 0x29, 0x1d);
+		anabel_video_set_reg(par, 0x5a, 0x88);
 		// chroma encoding config
-		pnx8550fb_anabel_set_reg(0x61, 0x06);
-		pnx8550fb_anabel_set_reg(0x63, 0xcb);
-		pnx8550fb_anabel_set_reg(0x64, 0x8a);
-		pnx8550fb_anabel_set_reg(0x65, 0x09);
-		pnx8550fb_anabel_set_reg(0x66, 0x2a);
-		pnx8550fb_anabel_set_reg(0x6c, 0x02);
-		pnx8550fb_anabel_set_reg(0x6d, 0x22);
-		pnx8550fb_anabel_set_reg(0x6e, 0x60);
+		anabel_video_set_reg(par, 0x61, 0x11);
+		anabel_video_set_reg(par, 0x63, 0x1f);
+		anabel_video_set_reg(par, 0x64, 0x7c);
+		anabel_video_set_reg(par, 0x65, 0xf0);
+		anabel_video_set_reg(par, 0x66, 0x21);
+		anabel_video_set_reg(par, 0x6c, 0xf2);
+		anabel_video_set_reg(par, 0x6d, 0x03);
+		anabel_video_set_reg(par, 0x6e, 0xD0);
 		// screen geometry
-		pnx8550fb_anabel_set_reg(0x70, 0x1a);
-		pnx8550fb_anabel_set_reg(0x71, 0x9f);
-		pnx8550fb_anabel_set_reg(0x72, 0x61);
-		pnx8550fb_anabel_set_reg(0x7a, 0x16);
-		pnx8550fb_anabel_set_reg(0x7b, 0x37);
-		pnx8550fb_anabel_set_reg(0x7c, 0x40);
+		anabel_video_set_reg(par, 0x70, 0xfb);
+		anabel_video_set_reg(par, 0x71, 0x90);
+		anabel_video_set_reg(par, 0x72, 0x60);
+		anabel_video_set_reg(par, 0x7a, 0x00);
+		anabel_video_set_reg(par, 0x7b, 0x05);
+		anabel_video_set_reg(par, 0x7c, 0x40);
 		// YUV encoding & pedestal
-		pnx8550fb_anabel_set_reg(0xa0, 0x00);
-		pnx8550fb_anabel_set_reg(0xa2, 0x10);
-		pnx8550fb_anabel_set_reg(0xa3, 0x80);
-		pnx8550fb_anabel_set_reg(0xa4, 0x80);
-		pnx8550fb_anabel_set_reg(0x5b, 0x89);
-		pnx8550fb_anabel_set_reg(0x5c, 0xbe);
-		pnx8550fb_anabel_set_reg(0x5d, 0x37);
-		pnx8550fb_anabel_set_reg(0x5e, 0x39);
-		pnx8550fb_anabel_set_reg(0x5f, 0x39);
-		pnx8550fb_anabel_set_reg(0x62, 0x38);
+		anabel_video_set_reg(par, 0xa0, 0x00);
+		anabel_video_set_reg(par, 0xa2, 0x0d);
+		anabel_video_set_reg(par, 0xa3, 0x80);
+		anabel_video_set_reg(par, 0xa4, 0x80);
+		anabel_video_set_reg(par, 0x5b, 0x7d);
+		anabel_video_set_reg(par, 0x5c, 0xaf);
+		anabel_video_set_reg(par, 0x5d, 0x3e);
+		anabel_video_set_reg(par, 0x5e, 0x32);
+		anabel_video_set_reg(par, 0x5f, 0x32);
+		anabel_video_set_reg(par, 0x62, 0x4c);
 		// DAC output levels
-		pnx8550fb_anabel_set_reg(0xc2, 0x1f);
-		pnx8550fb_anabel_set_reg(0xc3, 0x0A);
-		pnx8550fb_anabel_set_reg(0xc4, 0x0A);
-		pnx8550fb_anabel_set_reg(0xc5, 0x0A);
-		pnx8550fb_anabel_set_reg(0xc6, 0x00);
-	} else {
+		anabel_video_set_reg(par, 0xc2, 0x1e);
+		anabel_video_set_reg(par, 0xc3, 0x0A);
+		anabel_video_set_reg(par, 0xc4, 0x0A);
+		anabel_video_set_reg(par, 0xc5, 0x0A);
+		anabel_video_set_reg(par, 0xc6, 0x01);
+	} else { // default is PAL
 		// color burst config
-		pnx8550fb_anabel_set_reg(0x28, 0x25);
-		pnx8550fb_anabel_set_reg(0x29, 0x1d);
-		pnx8550fb_anabel_set_reg(0x5a, 0x88);
+		anabel_video_set_reg(par, 0x28, 0x21);
+		anabel_video_set_reg(par, 0x29, 0x1d);
+		anabel_video_set_reg(par, 0x5a, 0x00);
 		// chroma encoding config
-		pnx8550fb_anabel_set_reg(0x61, 0x11);
-		pnx8550fb_anabel_set_reg(0x63, 0x1f);
-		pnx8550fb_anabel_set_reg(0x64, 0x7c);
-		pnx8550fb_anabel_set_reg(0x65, 0xf0);
-		pnx8550fb_anabel_set_reg(0x66, 0x21);
-		pnx8550fb_anabel_set_reg(0x6c, 0xf2);
-		pnx8550fb_anabel_set_reg(0x6d, 0x03);
-		pnx8550fb_anabel_set_reg(0x6e, 0xD0);
+		anabel_video_set_reg(par, 0x61, 0x06);
+		anabel_video_set_reg(par, 0x63, 0xcb);
+		anabel_video_set_reg(par, 0x64, 0x8a);
+		anabel_video_set_reg(par, 0x65, 0x09);
+		anabel_video_set_reg(par, 0x66, 0x2a);
+		anabel_video_set_reg(par, 0x6c, 0x02);
+		anabel_video_set_reg(par, 0x6d, 0x22);
+		anabel_video_set_reg(par, 0x6e, 0x60);
 		// screen geometry
-		pnx8550fb_anabel_set_reg(0x70, 0xfb);
-		pnx8550fb_anabel_set_reg(0x71, 0x90);
-		pnx8550fb_anabel_set_reg(0x72, 0x60);
-		pnx8550fb_anabel_set_reg(0x7a, 0x00);
-		pnx8550fb_anabel_set_reg(0x7b, 0x05);
-		pnx8550fb_anabel_set_reg(0x7c, 0x40);
+		anabel_video_set_reg(par, 0x70, 0x1a);
+		anabel_video_set_reg(par, 0x71, 0x9f);
+		anabel_video_set_reg(par, 0x72, 0x61);
+		anabel_video_set_reg(par, 0x7a, 0x16);
+		anabel_video_set_reg(par, 0x7b, 0x37);
+		anabel_video_set_reg(par, 0x7c, 0x40);
 		// YUV encoding & pedestal
-		pnx8550fb_anabel_set_reg(0xa0, 0x00);
-		pnx8550fb_anabel_set_reg(0xa2, 0x0d);
-		pnx8550fb_anabel_set_reg(0xa3, 0x80);
-		pnx8550fb_anabel_set_reg(0xa4, 0x80);
-		pnx8550fb_anabel_set_reg(0x5b, 0x7d);
-		pnx8550fb_anabel_set_reg(0x5c, 0xaf);
-		pnx8550fb_anabel_set_reg(0x5d, 0x3e);
-		pnx8550fb_anabel_set_reg(0x5e, 0x32);
-		pnx8550fb_anabel_set_reg(0x5f, 0x32);
-		pnx8550fb_anabel_set_reg(0x62, 0x4c);
+		anabel_video_set_reg(par, 0xa0, 0x00);
+		anabel_video_set_reg(par, 0xa2, 0x10);
+		anabel_video_set_reg(par, 0xa3, 0x80);
+		anabel_video_set_reg(par, 0xa4, 0x80);
+		anabel_video_set_reg(par, 0x5b, 0x89);
+		anabel_video_set_reg(par, 0x5c, 0xbe);
+		anabel_video_set_reg(par, 0x5d, 0x37);
+		anabel_video_set_reg(par, 0x5e, 0x39);
+		anabel_video_set_reg(par, 0x5f, 0x39);
+		anabel_video_set_reg(par, 0x62, 0x38);
 		// DAC output levels
-		pnx8550fb_anabel_set_reg(0xc2, 0x1e);
-		pnx8550fb_anabel_set_reg(0xc3, 0x0A);
-		pnx8550fb_anabel_set_reg(0xc4, 0x0A);
-		pnx8550fb_anabel_set_reg(0xc5, 0x0A);
-		pnx8550fb_anabel_set_reg(0xc6, 0x01);
+		anabel_video_set_reg(par, 0xc2, 0x1f);
+		anabel_video_set_reg(par, 0xc3, 0x0A);
+		anabel_video_set_reg(par, 0xc4, 0x0A);
+		anabel_video_set_reg(par, 0xc5, 0x0A);
+		anabel_video_set_reg(par, 0xc6, 0x00);
 	}
 
 	// don't perform signature analysis
-	pnx8550fb_anabel_set_reg(0xba, 0x70);
+	anabel_video_set_reg(par, 0xba, 0x70);
 	// DAC configured for CVBS + RGB (instead of Y/C)
-	pnx8550fb_anabel_set_reg(0x2d, 0x40);
+	anabel_video_set_reg(par, 0x2d, 0x40);
 	// set SD (not HD) mode; interface config
-	pnx8550fb_anabel_set_reg(0x3a, 0x48);
-	pnx8550fb_anabel_set_reg(0x95, 0x00);
+	anabel_video_set_reg(par, 0x3a, 0x48);
+	anabel_video_set_reg(par, 0x95, 0x00);
 
 	// unblank the screen
-	pnx8550fb_anabel_set_reg(0x6e, 0x00);
+	anabel_video_set_reg(par, 0x6e, 0x00);
 }
 
-// register data used to initialise SCART switch for normal operation
-static const unsigned char pnx8550fb_scart_data[] = {
-    0x70, // control: STBY, MUTE, DAPD=normal operation, chip enabled,
-          //     audio 24-bit I²S without de-emphasis
-    0x74, // audio routing: main audio = stereo DAC,
-          //     VCR SCART audio = stereo DAC, main volume unmuted
-    0x00, // main volume: muted (until the audio driver loads and sets
-          //     the default volume)
-    0x27, // audio config: main volume transition = 2048ck,
-          //     DAC volume = ±0dB, VCR SCART audio = stereo
-    0x09, // video routing: TV SCART = encoder CVBS + RGB,
-          //     VCR SCART = encoder CVBS, composite = encoder CVBS
-    0x5F, // video output enable: TV CVBS, R, G, B, FB = enabled,
-          //     VCR CVBS = enabled, VCR C = disabled
-    0x04, // video gain: RGB gain +6dB, DC restore = encoder CVBS,
-          //     VCR clamp = Y/C, encoder clamp = RGB
-    0x8D, // blanking: TV FB = +4V, TV SB = output +12V, VCR SB = input
-    0x00, // monitor (readonly status register; dummy value)
-    0x9E, // monitor mask: video detection masked, interrupts disabled
-          //     (because nothing expects them)
-};
-
-// register data to place the SCART switch in auto-standby. these are
-// simply the power-up defaults according to the datasheet.
-static const unsigned char pnx8550fb_scart_standby[] = {
-	0x7b, // control: STBY, MUTE enabled, DAPD=normal operation,
-	      //     auto startup mode, audio 24-bit I²S without de-emphasis
-    // the rest is unnecessary but let's restore defaults anyway
-    0xd5,0x1f,0x27,0x9c,0x00,0x04,0x00,0x00,0x9E,
-};
-
-static void pnx8550fb_hw_suspend(int scart)
+static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par, int scart)
 {
 	if (scart)
 		ak4705_suspend();
 
 	// make sure the layer is disabled, to guard against any possibility
 	// that stopping the clocks might hang the DMA engine.
-	PNX8550FB_QVCP1_REG(0x240) = 0x00;
+	qvcp_set_reg(par, 0x240, 0x00);
 
 	// power down the PNX8510 DACs
-	pnx8550fb_anabel_set_reg(0xa5, 0x31);
+	anabel_video_set_reg(par, 0xa5, 0x31);
 	// stop the clocks
-	pnx8550fb_set_reg(I2C_ANABEL_CLOCK_ADDR, 0x01, 0x01);
-	pnx8550fb_set_reg(I2C_ANABEL_CLOCK_ADDR, 0x02, 0x01);
+	anabel_clock_set_reg(par, 0x01, 0x01);
+	anabel_clock_set_reg(par, 0x02, 0x01);
 
     // power-down the QVCP module (good measure when stopping the clocks)
-    PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) = PNX8550_DCSN_POWERDOWN_CMD;
+    qvcp_set_reg(par, PNX8550_DCSN_POWERDOWN_OFFSET,
+			PNX8550_DCSN_POWERDOWN_CMD);
     // stop QVCP clocks. we cannot shut down the output clock else the
     // Anabel stops responding to I²C commands, so we just leave the PLL
     // and output clock running instead. doesn't seem to draw any more
     // power than stopping it.
-    PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_27MHZ;
-    PNX8550_CM_QVCP1_OUT_CTL = PNX8550_CM_TM_CLK_ENABLE | PNX8550_CM_TM_CLK_PLL;
-    PNX8550_CM_QVCP1_PIX_CTL = 0;
-    PNX8550_CM_QVCP1_PROC_CTL = 0;
+    qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
+    qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
+    qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
+			| PNX8550_CM_QVCP_CLK_FCLOCK);
+	qvcp_set_clock(par, pix_clk, 0);
+	qvcp_set_clock(par, proc_clk, 0);
 }
 
-static void pnx8550fb_hw_resume(int scart)
+static void pnx8550fb_hw_resume(struct pnx8550fb_par *par, int scart)
 {
     // restore QVCP PLL & DDS, just in case
-    PNX8550_CM_PLL2_CTL = PNX8550_CM_PLL_27MHZ;
-    PNX8550_CM_DDS0_CTL = PNX8550_CM_DDS_27MHZ;
+    qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
+    qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
     // enable QVCP clocks
-    PNX8550_CM_QVCP1_OUT_CTL = PNX8550_CM_QVCP_CLK_ENABLE
-			| PNX8550_CM_QVCP_CLK_FCLOCK;
-    PNX8550_CM_QVCP1_PIX_CTL = PNX8550_CM_QVCP_CLK_ENABLE
-			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2;
+    qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
+			| PNX8550_CM_QVCP_CLK_FCLOCK);
+	qvcp_set_clock(par, pix_clk, PNX8550_CM_QVCP_CLK_ENABLE
+			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
     // process layers at 17MHz. slow but absolutely sufficient with a
     // single layer.
-    PNX8550_CM_QVCP1_PROC_CTL = PNX8550_CM_QVCP_CLK_ENABLE
-			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17;
+    qvcp_set_clock(par, proc_clk, PNX8550_CM_QVCP_CLK_ENABLE
+			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17);
     // disable QVCP power-down mode
-    PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) = 0;
+    qvcp_set_reg(par, PNX8550_DCSN_POWERDOWN_OFFSET, 0);
 
 	// wait for clocks to come up. the I²C transactions will time out if
 	// the clocks to the PNX8510 aren't yet available.
 	udelay(300);
 	
 	// make sure the clocks are enabled
-	pnx8550fb_set_reg(I2C_ANABEL_CLOCK_ADDR, 0x01, 0x00);
-	pnx8550fb_set_reg(I2C_ANABEL_CLOCK_ADDR, 0x02, 0x00);
+	anabel_clock_set_reg(par, 0x01, 0x00);
+	anabel_clock_set_reg(par, 0x02, 0x00);
 	// power the PNX8510 DACs back up
-	pnx8550fb_anabel_set_reg(0xa5, 0x30);
+	anabel_video_set_reg(par, 0xa5, 0x30);
 
 	// layer must be re-enabled separately if desired
 
@@ -269,135 +288,136 @@ static void pnx8550fb_hw_resume(int scart)
 		ak4705_resume();
 }
 
-static int pnx8550fb_hw_is_suspended(void)
+static int pnx8550fb_hw_is_suspended(struct pnx8550fb_par *par)
 {
-    return PNX8550_DCSN_POWERDOWN_CTL(PNX8550FB_QVCP1_BASE) & PNX8550_DCSN_POWERDOWN_CMD;
+    return qvcp_get_reg(par, PNX8550_DCSN_POWERDOWN_OFFSET)
+			& PNX8550_DCSN_POWERDOWN_CMD;
 }
 
 // set VESA blanking mode
-void pnx8550fb_set_blanking(int blank)
+void pnx8550fb_set_blanking(struct pnx8550fb_par *par, int blank)
 {
-	if (blank <= FB_BLANK_NORMAL && pnx8550fb_hw_is_suspended())
+	if (blank <= FB_BLANK_NORMAL && pnx8550fb_hw_is_suspended(par))
 		// switching out of powerdown, ie. need to resume the hardware
 		// to the point where it shows a blank screen
-		pnx8550fb_hw_resume(1);
+		pnx8550fb_hw_resume(par, 1);
 
     if (blank == FB_BLANK_UNBLANK)
 		// re-enable the layer
-		PNX8550FB_QVCP1_REG(0x240) = 0x01;
+		qvcp_set_reg(par, 0x240, 0x01);
 	else
 		// disable the layer, blanking the screen
-		PNX8550FB_QVCP1_REG(0x240) = 0x00;
+		qvcp_set_reg(par, 0x240, 0x00);
 
-	if (blank > FB_BLANK_NORMAL && !pnx8550fb_hw_is_suspended())
+	if (blank > FB_BLANK_NORMAL && !pnx8550fb_hw_is_suspended(par))
 		// switching into powerdown. suspend the display hardware.
-		pnx8550fb_hw_suspend(1);
+		pnx8550fb_hw_suspend(par, 1);
 }
 
 // sets up QVCP 1 for PAL/NTSC
-static void pnx8550fb_setup_qvcp(unsigned int buffer, int pal)
+static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 {
     // setup screen geometry
-    if (pal)
+    if (par->std == STD_NTSC)
     {
-        PNX8550FB_QVCP1_REG(0x000) = 0x035f0137;
-        PNX8550FB_QVCP1_REG(0x004) = 0x02d0035f;
-        PNX8550FB_QVCP1_REG(0x008) = 0x01390016;
-        PNX8550FB_QVCP1_REG(0x00c) = 0x02dd0350;
-        PNX8550FB_QVCP1_REG(0x010) = 0x0001000b;
-        PNX8550FB_QVCP1_REG(0x014) = 0x00AF0137;
-        PNX8550FB_QVCP1_REG(0x028) = 0x012D02DD;
-        PNX8550FB_QVCP1_REG(0x02c) = 0x012C02DC;
-        PNX8550FB_QVCP1_REG(0x234) = 0x012002d0;
+        qvcp_set_reg(par, 0x000, 0x03590105);
+        qvcp_set_reg(par, 0x004, 0x02d00359);
+        qvcp_set_reg(par, 0x008, 0x01070012);
+        qvcp_set_reg(par, 0x00c, 0x02dd034a);
+        qvcp_set_reg(par, 0x010, 0x0004000b);
+        qvcp_set_reg(par, 0x014, 0x00950105);
+        qvcp_set_reg(par, 0x028, 0x013002DD);
+        qvcp_set_reg(par, 0x02c, 0x012F02DC);
+        qvcp_set_reg(par, 0x234, 0x00F002d0);
     }
-    else
+    else // default is PAL
     {
-        PNX8550FB_QVCP1_REG(0x000) = 0x03590105;
-        PNX8550FB_QVCP1_REG(0x004) = 0x02d00359;
-        PNX8550FB_QVCP1_REG(0x008) = 0x01070012;
-        PNX8550FB_QVCP1_REG(0x00c) = 0x02dd034a;
-        PNX8550FB_QVCP1_REG(0x010) = 0x0004000b;
-        PNX8550FB_QVCP1_REG(0x014) = 0x00950105;
-        PNX8550FB_QVCP1_REG(0x028) = 0x013002DD;
-        PNX8550FB_QVCP1_REG(0x02c) = 0x012F02DC;
-        PNX8550FB_QVCP1_REG(0x234) = 0x00F002d0;
+        qvcp_set_reg(par, 0x000, 0x035f0137);
+        qvcp_set_reg(par, 0x004, 0x02d0035f);
+        qvcp_set_reg(par, 0x008, 0x01390016);
+        qvcp_set_reg(par, 0x00c, 0x02dd0350);
+        qvcp_set_reg(par, 0x010, 0x0001000b);
+        qvcp_set_reg(par, 0x014, 0x00AF0137);
+        qvcp_set_reg(par, 0x028, 0x012D02DD);
+        qvcp_set_reg(par, 0x02c, 0x012C02DC);
+        qvcp_set_reg(par, 0x234, 0x012002d0);
     }
     // configure and enable timing generator and video output
-    PNX8550FB_QVCP1_REG(0x020) = 0x20050005;
-    PNX8550FB_QVCP1_REG(0x03c) = 0x0fc01401;
+    qvcp_set_reg(par, 0x020, 0x20050005);
+    qvcp_set_reg(par, 0x03c, 0x0fc01401);
     // disable VBI generation
-    PNX8550FB_QVCP1_REG(0x034) = 0x00000000;
-    PNX8550FB_QVCP1_REG(0x038) = 0x00000000;
+    qvcp_set_reg(par, 0x034, 0x00000000);
+    qvcp_set_reg(par, 0x038, 0x00000000);
     // pedestals off
-    PNX8550FB_QVCP1_REG(0x05c) = 0x0;
-    PNX8550FB_QVCP1_REG(0x060) = 0x0;
+    qvcp_set_reg(par, 0x05c, 0x0);
+    qvcp_set_reg(par, 0x060, 0x0);
     // noise shaping on
-    PNX8550FB_QVCP1_REG(0x070) = 0x00130013;
-    PNX8550FB_QVCP1_REG(0x074) = 0x803F3F3F;
+    qvcp_set_reg(par, 0x070, 0x00130013);
+    qvcp_set_reg(par, 0x074, 0x803F3F3F);
     // set default background color: black
-    PNX8550FB_QVCP1_REG(0x01c) = 0x800000;
+    qvcp_set_reg(par, 0x01c, 0x800000);
     // set layer base address and size
-    PNX8550FB_QVCP1_REG(0x200) = buffer;
-    PNX8550FB_QVCP1_REG(0x204) = PNX8550FB_STRIDE*4;
-    PNX8550FB_QVCP1_REG(0x208) = PNX8550FB_STRIDE*2;
-    PNX8550FB_QVCP1_REG(0x20c) = buffer + (PNX8550FB_STRIDE*2);
-    PNX8550FB_QVCP1_REG(0x210) = PNX8550FB_STRIDE*4;
-    PNX8550FB_QVCP1_REG(0x214) = 8;
-    PNX8550FB_QVCP1_REG(0x230) = 0x80000000 | (16<<16)|(0x30);
-    PNX8550FB_QVCP1_REG(0x2b4) = PNX8550FB_WIDTH;
+    qvcp_set_reg(par, 0x200, par->iobase);
+    qvcp_set_reg(par, 0x204, PNX8550FB_STRIDE*4);
+    qvcp_set_reg(par, 0x208, PNX8550FB_STRIDE*2);
+    qvcp_set_reg(par, 0x20c, par->iobase + (PNX8550FB_STRIDE*2));
+    qvcp_set_reg(par, 0x210, PNX8550FB_STRIDE*4);
+    qvcp_set_reg(par, 0x214, 8);
+    qvcp_set_reg(par, 0x230, 0x80000000 | (16<<16)|(0x30));
+    qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH);
     // set pixel format
-    PNX8550FB_QVCP1_REG(0x23c) = 0x20;
-    PNX8550FB_QVCP1_REG(0x238) = 0x0;
+    qvcp_set_reg(par, 0x23c, 0x20);
+    qvcp_set_reg(par, 0x238, 0x0);
     // disable chroma keying
-    PNX8550FB_QVCP1_REG(0x25c) = 0x0;
-    PNX8550FB_QVCP1_REG(0x26c) = 0x0;
-    PNX8550FB_QVCP1_REG(0x27c) = 0x0;
-    PNX8550FB_QVCP1_REG(0x28c) = 0x0;
+    qvcp_set_reg(par, 0x25c, 0x0);
+    qvcp_set_reg(par, 0x26c, 0x0);
+    qvcp_set_reg(par, 0x27c, 0x0);
+    qvcp_set_reg(par, 0x28c, 0x0);
     // color mode = ARGB 8888
-    PNX8550FB_QVCP1_REG(0x2bc) = 0xec;
-    PNX8550FB_QVCP1_REG(0x2c4) = 0xffe7eff7;
+    qvcp_set_reg(par, 0x2bc, 0xec);
+    qvcp_set_reg(par, 0x2c4, 0xffe7eff7);
     // brightness / contrast / gamma
-    PNX8550FB_QVCP1_REG(0x2b8) = 0xe00;
-    PNX8550FB_QVCP1_REG(0x2cc) = 0x100f100;
+    qvcp_set_reg(par, 0x2b8, 0xe00);
+    qvcp_set_reg(par, 0x2cc, 0x100f100);
     // matrix coefficients
-    PNX8550FB_QVCP1_REG(0x2d0) = 0x004d0096;
-    PNX8550FB_QVCP1_REG(0x2d4) = 0x001d07da;
-    PNX8550FB_QVCP1_REG(0x2d8) = 0x07b60070;
-    PNX8550FB_QVCP1_REG(0x2dc) = 0x009d077c;
-    PNX8550FB_QVCP1_REG(0x2e0) = 0x07e60100;
+    qvcp_set_reg(par, 0x2d0, 0x004d0096);
+    qvcp_set_reg(par, 0x2d4, 0x001d07da);
+    qvcp_set_reg(par, 0x2d8, 0x07b60070);
+    qvcp_set_reg(par, 0x2dc, 0x009d077c);
+    qvcp_set_reg(par, 0x2e0, 0x07e60100);
 	// enable the layer
-    PNX8550FB_QVCP1_REG(0x240) = 0x1;
+    qvcp_set_reg(par, 0x240, 0x1);
 }
 
 // shuts down the QVCP and powers it down
-static void pnx8550fb_shutdown_qvcp(void)
+static void pnx8550fb_shutdown_qvcp(struct pnx8550fb_par *par)
 {
 	// disable timing generator, and thus reset all layers
-    PNX8550FB_QVCP1_REG(0x020) = 0x00000000;
+    qvcp_set_reg(par, 0x020, 0x00000000);
 }
 
 /* Function used to initialise the screen. */
-void pnx8550fb_setup_display(unsigned int base, int pal)
+void pnx8550fb_setup_display(struct pnx8550fb_par *par)
 {
 	// make sure hardware isn't suspended; might have been left in that
 	// state by something else.
-	pnx8550fb_hw_resume(0);
+	pnx8550fb_hw_resume(par, 0);
 
     // set up the QVCP registers
-    pnx8550fb_setup_qvcp(base, pal);
+    pnx8550fb_setup_qvcp(par);
 
     // set up Anabel over I2C
-    pnx8550fb_setup_anabel(pal);
+    pnx8550fb_setup_anabel(par);
 }
 
 /* Function used to shutdown the video system. */
-void pnx8550fb_shutdown_display(void)
+void pnx8550fb_shutdown_display(struct pnx8550fb_par *par)
 {
     // shutdown display hardware
-    pnx8550fb_hw_suspend(0);
+    pnx8550fb_hw_suspend(par, 0);
 
     // power down the QVCP a bit more deeply
-    pnx8550fb_shutdown_qvcp();
+    pnx8550fb_shutdown_qvcp(par);
 }
 
 static struct fb_fix_screeninfo fix = {
@@ -451,7 +471,8 @@ static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_
 /* Stub to make X11 happy. It spits out annoying errors otherwise. */
 static int pnx8550_framebuffer_blank(int blank, struct fb_info *info)
 {
-	pnx8550fb_set_blanking(blank);
+	struct pnx8550fb_par *par = info->par;
+	pnx8550fb_set_blanking(par, blank);
 	return 0;
 }
 
@@ -592,7 +613,19 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	par->iobase = fb_base;
 	par->base = fb_ptr;
 	par->size = PNX8550FB_SIZE;
-	
+	par->std = def.yres_virtual == PNX8550FB_HEIGHT_NTSC ? STD_NTSC : STD_PAL;
+	// hardware setup. should probably be defined in the platform_device
+	// instead of being hardcoded.
+	par->mmio = (void *) PNX8550FB_QVCP1_BASE;
+	par->i2c = i2c_get_adapter(I2C_ANABEL_BUS);
+	par->video_addr = I2C_ANABEL_VIDEO_ADDR;
+	par->clock_addr = I2C_ANABEL_CLOCK_ADDR;
+	par->out_clk = &PNX8550_CM_QVCP1_OUT_CTL;
+	par->pix_clk = &PNX8550_CM_QVCP1_PIX_CTL;
+	par->proc_clk = &PNX8550_CM_QVCP1_PROC_CTL;
+	par->clk_pll = &PNX8550_CM_QVCP1_PLL;
+	par->clk_dds = &PNX8550_CM_QVCP1_DDS;
+
 	info->fbops = &ops;
 	info->var = def;
 	info->fix = fix;
@@ -611,8 +644,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	}
 
 	// only enable display once the driver is already registered
-	pnx8550fb_setup_display(fb_base,
-			def.yres_virtual == PNX8550FB_HEIGHT_PAL);
+	pnx8550fb_setup_display(par);
 	printk(KERN_INFO "fb%d: PNX8550-STB810 %s framebuffer at 0x%08x / %08x\n",
 			info->node,
 			(def.yres_virtual == PNX8550FB_HEIGHT_PAL) ? "PAL" : "NTSC",
@@ -622,7 +654,10 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 
 static void pnx8550_framebuffer_shutdown(struct platform_device *dev)
 {
-	pnx8550fb_shutdown_display();
+	struct fb_info *info = platform_get_drvdata(dev);
+
+	if (info)
+		pnx8550fb_shutdown_display(info->par);
 }
 
 static int pnx8550_framebuffer_remove(struct platform_device *dev)

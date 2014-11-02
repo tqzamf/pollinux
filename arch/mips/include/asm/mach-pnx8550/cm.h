@@ -75,12 +75,16 @@
 #define PNX8550_CM_SPDO_CLK_FCLOCK 0x02
 
 // from PNX2015 datasheet
-#define PNX8550_CM_QVCP1_OUT_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xa00)
-#define PNX8550_CM_QVCP1_PIX_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xa04)
-#define PNX8550_CM_QVCP1_PROC_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0xa18)
-#define PNX8550_CM_QVCP2_OUT_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xa08)
-#define PNX8550_CM_QVCP2_PIX_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xa0c)
-#define PNX8550_CM_QVCP2_PROC_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0xa1c)
+#define PNX8550_CM_QVCP1_OUT_CTL   (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa00))
+#define PNX8550_CM_QVCP1_PIX_CTL   (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa04))
+#define PNX8550_CM_QVCP1_PROC_CTL  (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa18))
+#define PNX8550_CM_QVCP1_PLL       PNX8550_CM_PLL2_CTL
+#define PNX8550_CM_QVCP1_DDS       PNX8550_CM_DDS0_CTL
+#define PNX8550_CM_QVCP2_OUT_CTL   (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa08))
+#define PNX8550_CM_QVCP2_PIX_CTL   (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa0c))
+#define PNX8550_CM_QVCP2_PROC_CTL  (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa1c))
+#define PNX8550_CM_QVCP2_PLL       PNX8550_CM_PLL3_CTL
+#define PNX8550_CM_QVCP2_DDS       PNX8550_CM_DDS1_CTL
 #define PNX8550_CM_QVCP_CLK_ENABLE  0x01
 #define PNX8550_CM_QVCP_CLK_FCLOCK  0x02
 #define PNX8550_CM_QVCP_CLK_DIV_1   0x00
