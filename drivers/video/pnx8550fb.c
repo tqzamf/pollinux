@@ -453,6 +453,63 @@ static struct fb_var_screeninfo def = {
 	.vmode =          FB_VMODE_INTERLACED,
 };
 
+enum standard std = STD_PAL;
+
+static int pnx8550fb_standard_set(const char *val,
+		const struct kernel_param *kp)
+{
+	int n;
+
+	// skip newlines (can happen when writing the sysfs file)
+	n = strlen(val);
+	if (n > 0 && val[n - 1] == '\n')
+		n--;
+
+	if (!strncasecmp(val, "ntsc", n)) {
+		std = STD_NTSC;
+		def.yres_virtual = PNX8550FB_HEIGHT_NTSC;
+		def.upper_margin = PNX8550FB_MARGIN_UPPER_NTSC;
+		def.lower_margin = PNX8550FB_MARGIN_LOWER_NTSC;
+		def.vsync_len = PNX8550FB_VSYNC_NTSC;
+		def.hsync_len = PNX8550FB_HSYNC_NTSC;
+	} else if (!strncasecmp(val, "pal", n)
+			|| !strncasecmp(val, "default", n)) {
+		std = STD_PAL;
+		def.yres_virtual = PNX8550FB_HEIGHT_PAL;
+		def.upper_margin = PNX8550FB_MARGIN_UPPER_PAL;
+		def.lower_margin = PNX8550FB_MARGIN_LOWER_PAL;
+		def.vsync_len = PNX8550FB_VSYNC_PAL;
+		def.hsync_len = PNX8550FB_HSYNC_PAL;
+	} else
+		return -EINVAL;
+
+	return 0;
+}
+
+static int pnx8550fb_standard_get(char *buffer,
+		const struct kernel_param *kp)
+{
+	switch (std) {
+	case STD_NTSC:
+		strcpy(buffer, "ntsc");
+		break;
+	case STD_PAL:
+		strcpy(buffer, "pal");
+		break;
+	default:
+		sprintf(buffer, "%d", std);
+		break;
+	}
+	return strlen(buffer);
+}
+
+static struct kernel_param_ops pnx8550fb_standard_ops = {
+	.set = pnx8550fb_standard_set,
+	.get = pnx8550fb_standard_get,
+};
+
+module_param_cb(standard, &pnx8550fb_standard_ops, &std, 0644);
+
 /* Dummy palette to make fbcon work. */
 static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
 			 u_int transp, struct fb_info *info)
@@ -542,6 +599,17 @@ static int pnx8550fb_resize(struct fb_info *info, int init)
 	struct pnx8550fb_par *par = info->par;
 	int start_offset, end_offset;
 	
+	if (par->std != std) {
+		// if standard has changed, re-initialize the display. this
+		// involves completely shutting it down and starting it up again
+		// so that the switch works without invalid intermediate output.
+		// note that it WILL cause flicker; that's just impossible to
+		// avoid when switching video standards.
+		pnx8550fb_shutdown_display(par);
+		par->std = std;
+		pnx8550fb_setup_display(par);
+	}
+
 	// blank the screen. the client needs to redraw it anyway, but the
 	// borders will stay black.
 	memset(par->base, 0, par->size);
@@ -698,20 +766,12 @@ static int __init pnx8550_framebuffer_init(void)
 	
 	// format: [pal|ntsc][WIDTH][xHEIGHT]
 	if (option) {
-		// parse standard and set correct vertical parameters
+		// set standard if given. this overrides the module parameter...
 		if (!strncasecmp(option, "ntsc", 4)) {
-			def.yres_virtual = PNX8550FB_HEIGHT_NTSC;
-			def.upper_margin = PNX8550FB_MARGIN_UPPER_NTSC;
-			def.lower_margin = PNX8550FB_MARGIN_LOWER_NTSC;
-			def.vsync_len = PNX8550FB_VSYNC_NTSC;
-			def.hsync_len = PNX8550FB_HSYNC_NTSC;
+			pnx8550fb_standard_set("ntsc", NULL);
 			option += 4;
 		} else if (!strncasecmp(option, "pal", 3)) {
-			def.yres_virtual = PNX8550FB_HEIGHT_PAL;
-			def.upper_margin = PNX8550FB_MARGIN_UPPER_PAL;
-			def.lower_margin = PNX8550FB_MARGIN_LOWER_PAL;
-			def.vsync_len = PNX8550FB_VSYNC_PAL;
-			def.hsync_len = PNX8550FB_HSYNC_PAL;
+			pnx8550fb_standard_set("pal", NULL);
 			option += 3;
 		}
 
