@@ -225,10 +225,10 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 	anabel_video_set_reg(par, 0x6e, 0x00);
 }
 
-static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par, int scart)
+static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
 {
-	if (scart)
-		ak4705_suspend();
+	// suspend SCART switch disabling video output
+	ak4705_suspend();
 
 	// make sure the layer is disabled, to guard against any possibility
 	// that stopping the clocks might hang the DMA engine.
@@ -255,7 +255,7 @@ static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par, int scart)
 	qvcp_set_clock(par, proc_clk, 0);
 }
 
-static void pnx8550fb_hw_resume(struct pnx8550fb_par *par, int scart)
+static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
 {
     // restore QVCP PLL & DDS, just in case
     qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
@@ -284,8 +284,8 @@ static void pnx8550fb_hw_resume(struct pnx8550fb_par *par, int scart)
 
 	// layer must be re-enabled separately if desired
 
-	if (scart)
-		ak4705_resume();
+	// resume SCART switch as well
+	ak4705_resume();
 }
 
 static int pnx8550fb_hw_is_suspended(struct pnx8550fb_par *par)
@@ -300,7 +300,7 @@ void pnx8550fb_set_blanking(struct pnx8550fb_par *par, int blank)
 	if (blank <= FB_BLANK_NORMAL && pnx8550fb_hw_is_suspended(par))
 		// switching out of powerdown, ie. need to resume the hardware
 		// to the point where it shows a blank screen
-		pnx8550fb_hw_resume(par, 1);
+		pnx8550fb_hw_resume(par);
 
     if (blank == FB_BLANK_UNBLANK)
 		// re-enable the layer
@@ -311,7 +311,7 @@ void pnx8550fb_set_blanking(struct pnx8550fb_par *par, int blank)
 
 	if (blank > FB_BLANK_NORMAL && !pnx8550fb_hw_is_suspended(par))
 		// switching into powerdown. suspend the display hardware.
-		pnx8550fb_hw_suspend(par, 1);
+		pnx8550fb_hw_suspend(par);
 }
 
 // sets up QVCP 1 for PAL/NTSC
@@ -401,7 +401,7 @@ void pnx8550fb_setup_display(struct pnx8550fb_par *par)
 {
 	// make sure hardware isn't suspended; might have been left in that
 	// state by something else.
-	pnx8550fb_hw_resume(par, 0);
+	pnx8550fb_hw_resume(par);
 
     // set up the QVCP registers
     pnx8550fb_setup_qvcp(par);
@@ -414,7 +414,7 @@ void pnx8550fb_setup_display(struct pnx8550fb_par *par)
 void pnx8550fb_shutdown_display(struct pnx8550fb_par *par)
 {
     // shutdown display hardware
-    pnx8550fb_hw_suspend(par, 0);
+    pnx8550fb_hw_suspend(par);
 
     // power down the QVCP a bit more deeply
     pnx8550fb_shutdown_qvcp(par);

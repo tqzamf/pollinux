@@ -102,8 +102,10 @@ static void ak4705_setup(void)
     // monitor mask: video detection masked, interrupts disabled
     //     (because nothing expects them)
     ak4705_set_reg(0x09, 0x9E);
-    // configure routing as a resume would
-    ak4705_resume();
+    // configure routing for suspended operation. this leaves the
+    // display off until the framebuffer driver explicitly enables it,
+    // avoiding flicker.
+    ak4705_suspend();
 }
 
 // places the AK4705 back into auto-startup standby mode, ie. bypassing
