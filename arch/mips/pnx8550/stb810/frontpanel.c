@@ -28,6 +28,7 @@
 		(0x80 | ((enable) ? 0x08 : 0x00) | ((brightness) & 7))
 #define CMD_SET_ADDR(addr) \
 		(0xC0 | ((addr) & 15))
+#define DOT_SPECIAL 0x80
 
 static bool flip = 0;
 module_param(flip, bool, 0644);
@@ -309,7 +310,7 @@ static DEVICE_ATTR(dots, 0600, dots_show, dots_store);
 
 // character conversion table. this defaults to something sensible, but can be
 // changed by modifying the charmap file
-static SEG7_CONVERSION_MAP(pnx8550_frontpanel_charmap, MAP_ASCII7SEG_ALPHANUM_LC);
+static SEG7_CONVERSION_MAP(pnx8550_frontpanel_charmap, MAP_ASCII7SEG_ALPHANUM);
 static struct bin_attribute charmap;
 
 static ssize_t charmap_write(struct file *filp, struct kobject *kobj,
@@ -358,28 +359,35 @@ static ssize_t ascii_store(struct device *dev,
 			   struct device_attribute *attr,
 			   const char *buf, size_t size)
 {
-	int i, dot = 1, digit = 0;
+	int i, dot = 1, digit = 0, symbol;
+
 	memset(pnx8550_frontpanel_digits, 0, 4);
 	if (!flip)
 		pnx8550_frontpanel_dots = 0;
+
 	for (i = 0; i < size && digit < 5; i++) {
-		if (!flip && buf[i] == '.') {
+		symbol = map_to_seg7(&pnx8550_frontpanel_charmap, buf[i]);
+		if (symbol < 0)
+			continue; // skip unmappable characters
+
+		if (!flip && (symbol & DOT_SPECIAL)) {
 			if (dot == 0)
 				// don't use up a digit; instead just switch on the dot
 				// between digits.
 				// however, if the last character already was a dot, do
 				// use a digit and output a space. this looks less
-				// ridiculous than writing out a dot.
+				// ridiculous than writing out a dot, without using any
+				// more space.
 				digit--;
 			dot = 1;
 			pnx8550_frontpanel_dots |= 1 << digit;
 		} else if (digit < 4) {
 			dot = 0;
-			pnx8550_frontpanel_digits[digit] =
-				map_to_seg7(&pnx8550_frontpanel_charmap, buf[i]);
+			pnx8550_frontpanel_digits[digit] = symbol;
 		}
 		digit++;
 	}
+
 	pnx8550_frontpanel_update_display();
 	return size;
 }
@@ -454,6 +462,11 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 	int res;
 	int *base = pdev->dev.platform_data;
 	
+	// enable special handling of dots by default. this can be enabled
+	// for other characters as well through the normal charmap loading
+	// mechanism.
+	pnx8550_frontpanel_charmap.table['.'] |= DOT_SPECIAL;
+
 	// reserve the pins. for performance, we don't actually go through the
 	// GPIO driver at all
 	gpio_request(*base + 0, "frontpanel display");
