@@ -309,7 +309,7 @@ static DEVICE_ATTR(dots, 0600, dots_show, dots_store);
 
 // character conversion table. this defaults to something sensible, but can be
 // changed by modifying the charmap file
-static SEG7_CONVERSION_MAP(pnx8550_frontpanel_charmap, MAP_ASCII7SEG_ALPHANUM_LC);
+static SEG7_CONVERSION_MAP(pnx8550_frontpanel_charmap, MAP_ASCII7SEG_ALPHANUM);
 static struct bin_attribute charmap;
 
 static ssize_t charmap_write(struct file *filp, struct kobject *kobj,
@@ -359,9 +359,11 @@ static ssize_t ascii_store(struct device *dev,
 			   const char *buf, size_t size)
 {
 	int i, dot = 1, digit = 0;
+
 	memset(pnx8550_frontpanel_digits, 0, 4);
 	if (!flip)
 		pnx8550_frontpanel_dots = 0;
+
 	for (i = 0; i < size && digit < 5; i++) {
 		if (!flip && buf[i] == '.') {
 			if (dot == 0)
@@ -380,6 +382,7 @@ static ssize_t ascii_store(struct device *dev,
 		}
 		digit++;
 	}
+
 	pnx8550_frontpanel_update_display();
 	return size;
 }

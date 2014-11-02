@@ -36,7 +36,7 @@ fi
 # check if init is usable. if not, drop to rescue shell to let the user
 # try and fix it.
 while ! [ -x "/root/sbin/init" ]; do
-	echo fa1l >/sys/devices/platform/frontpanel/ascii
+	echo FAIL >/sys/devices/platform/frontpanel/ascii
 	echo -n "/sbin/init not found on /root. "
 	case "$bootfail" in
 	reboot|retry)
@@ -58,7 +58,7 @@ while ! [ -x "/root/sbin/init" ]; do
 	esac
 
 	echo "starting rescue shell."
-	echo resc >/sys/devices/platform/frontpanel/ascii
+	echo r.con >/sys/devices/platform/frontpanel/ascii
 	setsid cttyhack ash
 done
 # init appears to be usable. try switching to it. if this fails, that's
