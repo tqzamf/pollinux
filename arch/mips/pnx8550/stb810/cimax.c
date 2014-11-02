@@ -367,10 +367,23 @@ static irqreturn_t cimax_isr(int irq, void *dev_id)
 	return IRQ_HANDLED;
 }
 
+static int presence_read(void)
+{
+	char status;
+
+	status = cimax_read_reg(CIMAX_MC_A);
+	if (status < 0)
+		return status;
+
+	if (status & CIMAX_MC_DET)
+		return 1;
+	return 0;
+}
+
 static ssize_t cimax_int_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos)
 {
-	int intcount_det = 0, intcount_irq = 0;
+	int intcount_det = 0, intcount_irq = 0, status;
 	struct cimax_irqstatus *info = file->private_data;
 	
 	// schedule work to check the status. this blocks if there are no
@@ -381,9 +394,19 @@ static ssize_t cimax_int_read(struct file *file, char __user *buf,
 			(intcount_irq = chip.intcount_irq) != info->intcount_irq);
 	
 	if (intcount_det != info->intcount_det) {
-		if (count > 9)
-			count = 9;
-		copy_to_user(buf, "presence\n", count);
+		status = presence_read();
+		if (status == 0) {
+			if (count > 6)
+				count = 6;
+			copy_to_user(buf, "eject\n", count);
+		} else if (status >= 1) {
+			if (count > 7)
+				count = 7;
+			copy_to_user(buf, "insert\n", count);
+		} else
+			// error! do NOT update event; we might succeed next time.
+			// this ensures that events don't get lost.
+			return status;
 	} else { // intcount_irq != info->intcount_irq
 		if (count > 4)
 			count = 4;
@@ -673,16 +696,15 @@ static ssize_t presence_show(struct device *dev,
 {
 	char status;
 	
-	status = cimax_read_reg(CIMAX_MC_A);
+	status = presence_read();
 	if (status < 0)
 		return status;
-	
-	buf[0] = 0;
-	if (status & CIMAX_MC_DET)
-		strcat(buf, "inserted\n");
+
+	if (status)
+		strcpy(buf, "inserted\n");
 	else
-		strcat(buf, "ejected\n");
-	
+		strcpy(buf, "ejected\n");
+
 	return strlen(buf);
 }
 static DEVICE_ATTR(presence, 0400, presence_show, NULL);
