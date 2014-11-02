@@ -20,22 +20,54 @@
 #include <linux/serial.h>
 #include <linux/serial_pnx8xxx.h>
 #include <linux/platform_device.h>
+#include <linux/i2c.h>
 
 #include <int.h>
 #include <usb.h>
 #include <uart.h>
+#include <i2c.h>
 
 static struct platform_device cimax_device = {
 	.name          = "cimax",
 	.id            = -1,
 };
 
+static struct platform_device pnx8550_ao1_device = {
+	.name		= "pnx8550ao1",
+	.id		= -1,
+};
+
+static struct platform_device pnx8550_spdo_device = {
+	.name		= "pnx8550spdo",
+	.id		= -1,
+};
+
+static struct platform_device pnx8550fb_device = {
+	.name          = "pnx8550fb",
+	.id            = -1,
+};
+
 static struct platform_device *pnx8550_stb810_platform_devices[] __initdata = {
 	&cimax_device,
+	&pnx8550_ao1_device,
+	&pnx8550_spdo_device,
+	&pnx8550fb_device,
+};
+
+static struct i2c_board_info pnx8550_ak4705_device __initconst = {
+	I2C_BOARD_INFO("ak4705", 0x11) /* AK4705 SCART switch */
 };
 
 static int __init pnx8550_stb810_platform_init(void)
 {
+	int err;
+
+	err = i2c_register_board_info(PNX8550_I2C_IP0105_BUS1,
+			&pnx8550_ak4705_device, 1);
+	if (err < 0)
+		// cannot register AK4705
+		return err;
+
 	return platform_add_devices(pnx8550_stb810_platform_devices,
 			            ARRAY_SIZE(pnx8550_stb810_platform_devices));
 }

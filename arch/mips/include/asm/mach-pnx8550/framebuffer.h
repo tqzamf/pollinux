@@ -8,11 +8,6 @@
 #ifndef __PNX8550FB_H
 #define __PNX8550FB_H
 
-extern void pnx8550fb_shutdown_display(void);
-extern void pnx8550fb_setup_display(unsigned int base, int pal);
-extern void pnx8550fb_set_blanking(int blank);
-extern void pnx8550fb_set_volume(int volume);
-
 #define PNX8550FB_PSEUDO_PALETTE_SIZE     16
 
 /* Macros defining the frame buffer display attributes.

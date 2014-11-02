@@ -35,7 +35,7 @@
 #include <sound/initval.h>
 
 #include <asm/mach-pnx8550/audio.h>
-#include <asm/mach-pnx8550/framebuffer.h>
+#include <asm/mach-pnx8550/ak4705.h>
 #include <asm/div64.h>
 
 MODULE_AUTHOR("Matthias <tqzamf@gmail.com>");
@@ -88,7 +88,7 @@ static int pnx8550ao1_gain_put(struct snd_kcontrol *kcontrol,
 	if (newvol > AK4705_VOL_MAX)
 		newvol = AK4705_VOL_MAX;
 	chip->volume = newvol;
-	pnx8550fb_set_volume(newvol);
+	ak4705_set_volume(newvol);
 
 	return newvol != oldvol;
 }
@@ -111,7 +111,7 @@ static int __devinit snd_pnx8550ao1_new_mixer(struct snd_pnx8550ao1 *chip)
 			  snd_ctl_new1(&pnx8550ao1_ctrl_volume, chip));
 	if (!err) {
 		chip->volume = AK4705_VOL_DEFAULT;
-		pnx8550fb_set_volume(chip->volume);
+		ak4705_set_volume(chip->volume);
 	}
 	
 	return err;
@@ -404,7 +404,7 @@ static int __devinit snd_pnx8550ao1_new_pcm(struct snd_pnx8550ao1 *chip)
 static int snd_pnx8550ao1_free(struct snd_pnx8550ao1 *chip)
 {
 	// mute the volume; there can be noise on the outputs otherwise
-	pnx8550fb_set_volume(0);
+	ak4705_set_volume(0);
 	
 	/* clear and disable interrupts, and disable transmission */
 	PNX8550_AO_CTL = PNX8550_AO_UDR | PNX8550_AO_BUF1 | PNX8550_AO_BUF2

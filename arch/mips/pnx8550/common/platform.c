@@ -91,26 +91,8 @@ static struct platform_device pnx8550_uart_device = {
 	.resource	= pnx8550_uart_resources,
 };
 
-static struct platform_device pnx8550_ao1_device = {
-	.name		= "pnx8550ao1",
-	.id		= -1,
-};
-
-static struct platform_device pnx8550_spdo_device = {
-	.name		= "pnx8550spdo",
-	.id		= -1,
-};
-
-static struct platform_device pnx8550fb_device = {
-	.name          = "pnx8550fb",
-	.id            = -1,
-};
-
 static struct platform_device *pnx8550_platform_devices[] __initdata = {
 	&pnx8550_uart_device,
-	&pnx8550_ao1_device,
-	&pnx8550_spdo_device,
-	&pnx8550fb_device,
 };
 
 static int __init pnx8550_platform_init(void)

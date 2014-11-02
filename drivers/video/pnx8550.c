@@ -26,7 +26,7 @@
 #include <linux/init.h>
 
 #include <framebuffer.h>
-#include <audio.h>
+#include <ak4705.h>
 #include <i2c.h>
 #include <dcsn.h>
 #include <cm.h>
@@ -43,8 +43,6 @@ struct pnx8550fb_par {
 	int lower;
 };
 
-#define I2C_SCART_BUS                  PNX8550_I2C_IP0105_BUS1
-#define I2C_SCART_ADDR                 0x11
 #define I2C_ANABEL_BUS                 PNX8550_I2C_IP3203_BUS1
 #define I2C_ANABEL_VIDEO_ADDR          0x66
 #define I2C_ANABEL_CLOCK_ADDR          0x76
@@ -71,33 +69,6 @@ static void pnx8550fb_set_reg(unsigned char addr, unsigned char reg, unsigned ch
 static void pnx8550fb_anabel_set_reg(unsigned char reg, unsigned char value)
 {
 	pnx8550fb_set_reg(I2C_ANABEL_VIDEO_ADDR, reg, value);
-}
-
-// sets a series of consecutive registers in the SCART switch (AK4705)
-static void pnx8550fb_scart_set_regs(unsigned char addr,
-		const unsigned char *data, unsigned char len)
-{
-	struct i2c_adapter *adapter;
-    unsigned char addr_and_data[len + 1];
-	struct i2c_msg msg = {
-		.addr = I2C_SCART_ADDR,
-		.flags = 0,
-		.len = len + 1,
-		.buf = addr_and_data,
-	};
-
-	addr_and_data[0] = addr;
-	memcpy(&addr_and_data[1], data, len);
-    adapter = i2c_get_adapter(I2C_SCART_BUS);
-	if (i2c_transfer(adapter, &msg, 1) != 1)
-		printk(KERN_ERR "%s: error writing SCART switch registers %02x .. %02x\n",
-				__func__, addr, addr + len);
-}
-
-// sets a single register in the SCART switch (AK4705)
-static void pnx8550fb_scart_set_reg(unsigned char reg, unsigned char data)
-{
-	pnx8550fb_scart_set_regs(reg, &data, 1);
 }
 
 // configures Anabel (PNX8510) for PAL/NTSC
@@ -238,26 +209,10 @@ static const unsigned char pnx8550fb_scart_standby[] = {
     0xd5,0x1f,0x27,0x9c,0x00,0x04,0x00,0x00,0x9E,
 };
 
-// sets the main volume in the SCART switch / DAC chip
-void pnx8550fb_set_volume(int volume)
-{
-	char vol = volume;
-	if (vol < 0)
-		vol = 0;
-	if (vol > AK4705_VOL_MAX)
-		vol = AK4705_VOL_MAX;
-
-	pnx8550fb_scart_set_reg(0x02, vol);
-}
-
 static void pnx8550fb_hw_suspend(int scart)
 {
-	if (scart) {
-		// de-assert slow & fast blanking on the SCART ports
-		pnx8550fb_scart_set_reg(0x07, 0x80);
-		// set video outputs to Hi-Z
-		pnx8550fb_scart_set_reg(0x04, 0xC0);
-	}
+	if (scart)
+		ak4705_suspend();
 
 	// make sure the layer is disabled, to guard against any possibility
 	// that stopping the clocks might hang the DMA engine.
@@ -310,11 +265,8 @@ static void pnx8550fb_hw_resume(int scart)
 
 	// layer must be re-enabled separately if desired
 
-	if (scart) {
-		// restore SCART switch to operating config
-		pnx8550fb_scart_set_reg(0x04, pnx8550fb_scart_data[0x04]);
-		pnx8550fb_scart_set_reg(0x07, pnx8550fb_scart_data[0x07]);
-	}
+	if (scart)
+		ak4705_resume();
 }
 
 static int pnx8550fb_hw_is_suspended(void)
@@ -436,10 +388,6 @@ void pnx8550fb_setup_display(unsigned int base, int pal)
 
     // set up Anabel over I2C
     pnx8550fb_setup_anabel(pal);
-
-    // set up the SCART switch
-    pnx8550fb_scart_set_regs(0x00, pnx8550fb_scart_data,
-            ARRAY_SIZE(pnx8550fb_scart_data));
 }
 
 /* Function used to shutdown the video system. */
@@ -450,14 +398,7 @@ void pnx8550fb_shutdown_display(void)
 
     // power down the QVCP a bit more deeply
     pnx8550fb_shutdown_qvcp();
-
-    // shut down the SCART switch completely, by restoring it to its
-    // power-up defaults
-    pnx8550fb_scart_set_regs(0x00, pnx8550fb_scart_standby,
-            ARRAY_SIZE(pnx8550fb_scart_standby));
 }
-
-EXPORT_SYMBOL(pnx8550fb_set_volume);
 
 static struct fb_fix_screeninfo fix = {
 	.id =          "PNX8550-STB810",
