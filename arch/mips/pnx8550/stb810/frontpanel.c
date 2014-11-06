@@ -42,6 +42,9 @@ MODULE_PARM_DESC(boot, "string to display during boot");
 static void pnx8550_frontpanel_send(unsigned char *data, int len) {
 	int i, j;
 	
+	// we don't want to get interrupted here. could use a spinlock, but
+	// preemption is a lot cheaper.
+	preempt_disable();
 	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_PT6955_STROBE);
 	for (j = 0; j < len; j++) {
 		unsigned int byte = data[j];
@@ -53,6 +56,7 @@ static void pnx8550_frontpanel_send(unsigned char *data, int len) {
 		}
 	}
 	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_STROBE);
+	preempt_enable();
 }
 
 // raw cached display data (digits)
@@ -109,7 +113,7 @@ static void pnx8550_frontpanel_update_display(void) {
 }
 
 // send pnx8550_frontpanel_leds to the chip, swapping them if necessary
-static void pnx8550_frontpanel_update_leds(void) {
+static void pnx8550_frontpanel_update_leds(struct work_struct *work) {
 	unsigned char buffer[2] = { CMD_SET_ADDR(8), 0, };
 	if (flip)
 		buffer[1] = pnx8550_frontpanel_leds;
@@ -117,6 +121,7 @@ static void pnx8550_frontpanel_update_leds(void) {
 		buffer[1] = (pnx8550_frontpanel_leds >> 1) | (pnx8550_frontpanel_leds << 1);
 	pnx8550_frontpanel_send(buffer, 2);
 }
+DECLARE_WORK(pnx8550_frontpanel_leds_work, pnx8550_frontpanel_update_leds);
 
 
 // brightness attribute (in 1/16 of duty cycle, but not all values are
@@ -426,7 +431,20 @@ static void pnx8550_frontpanel_led_set(struct led_classdev *led,
 	else
 		pnx8550_frontpanel_leds |= bit;
 	
-	pnx8550_frontpanel_update_leds();
+	// don't set the LEDs directly. if it is being set by a trigger,
+	// we might be in interrupt context, and quite possibly some other
+	// task might be accessing the display part in parallel, leaving
+	// the chip completely confused. instead, just remember to do it
+	// later, in process context. because the command sending is
+	// non-preemptible, it cannot get interrupted by another process
+	// (or kernel thread), so no concurrency can happen. spinlocks
+	// could do that as well, but the work queue has the additional
+	// benefit of combining too-rapid updates.
+	// if the work is running right now, it might send outdated data.
+	// but if it's running then it isn't in the queue and will be
+	// rescheduled later, and the rescheduled function will set the
+	// proper value.
+	schedule_work(&pnx8550_frontpanel_leds_work);
 }
 
 
@@ -440,9 +458,9 @@ static void pnx8550_frontpanel_shutdown(struct platform_device *pdev)
 	pnx8550_frontpanel_dots = 0;
 	ascii_store(0, 0, NULL, 0);
 	
-	// clear LEDs too
+	// clear LEDs too (non-delayed)
 	pnx8550_frontpanel_leds = 0;
-	pnx8550_frontpanel_update_leds();
+	pnx8550_frontpanel_update_leds(NULL);
 
 	// blank the chip. this is the easiest way to make sure the display
 	// and LEDs are off during reboot.
