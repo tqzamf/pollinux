@@ -168,9 +168,14 @@ static const struct vm_operations_struct cimax_vmops = {
 
 static int cimax_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	// same sanity checking upfront: we cannot COW hardware
+	unsigned int off, vsize, psize;
+
+	// same sanity checking upfront
+	off = vma->vm_pgoff << PAGE_SHIFT;
+	vsize = vma->vm_end - vma->vm_start;
+	psize = CIMAX_SIZE - off;
 	if (!(vma->vm_flags & VM_SHARED))
-		return -EINVAL;
+		return -EINVAL; /* cannot COW physical hardware */
 
 	// the fault callback does the actual mapping. no need to prohibit
 	// mremap; the fault callback will send SIGBUS if resizing the mmap
