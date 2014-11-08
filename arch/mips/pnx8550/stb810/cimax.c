@@ -28,15 +28,9 @@
 #include <cimax.h>
 #include <i2c.h>
 
-struct cimax_memblock {
-	unsigned int addr;
-	char *base;
-	struct miscdevice device;
-	char devname[16];
-};
 static struct cimax {
-	struct cimax_memblock memblock[CIMAX_NUM_BLOCKS];
-	unsigned int base;
+	unsigned int iobase;
+	volatile unsigned char *vmbase;
 	unsigned int irq;
 	unsigned char i2c_addr;
 	struct i2c_adapter *i2c_adapter;
@@ -44,6 +38,7 @@ static struct cimax {
 	unsigned char cm_timing_sel;
 	unsigned char power_control;
 	unsigned char module_control;
+	struct miscdevice memory_device;
 	unsigned int irq_masked;
 	struct task_struct *irq_unmask_thread;
 	wait_queue_head_t irq_unmask_queue;
@@ -64,21 +59,27 @@ struct cimax_irqstatus {
 static ssize_t cimax_read(struct file *file, char __user *buf,
 			size_t count, loff_t *ppos)
 {
-	struct cimax_memblock *block;
-	unsigned int rem, off;
+	struct cimax *chip;
+	unsigned int off, i;
+	unsigned char temp;
 
-	block = file->private_data;
+	chip = file->private_data;
 	off = *ppos;
-	if (off >= CIMAX_BLOCK_SIZE)
+	if (off >= CIMAX_SIZE)
 		return 0; // EOF
-	if (off + count > CIMAX_BLOCK_SIZE)
-		count = CIMAX_BLOCK_SIZE - off;
-	if (count >= CIMAX_BLOCK_SIZE)
+	if (off + count > CIMAX_SIZE)
+		count = CIMAX_SIZE - off;
+	if (count > CIMAX_SIZE)
 		return -EFAULT;
+	if (!access_ok(VERIFY_READ, buf, count))
+		return -EINVAL;
 
-	rem = copy_to_user(buf, block->base + off, count);
-	if (rem)
-		return -EFAULT;
+	for (i = 0; i < count; i++) {
+		// deliberately copy byte-wise. order of access is visible to
+		// the device and may be important.
+		temp = CIMAX_BYTE(chip->vmbase, off + i);
+		__put_user(temp, &buf[i]);
+	}
 
 	*ppos += count;
 	return count;
@@ -87,21 +88,27 @@ static ssize_t cimax_read(struct file *file, char __user *buf,
 static ssize_t cimax_write(struct file *file, const char __user *buf,
 			 size_t count, loff_t *ppos)
 {
-	struct cimax_memblock *block;
-	unsigned int rem, off;
+	struct cimax *chip;
+	unsigned int off, i;
+	unsigned char temp;
 
-	block = file->private_data;
+	chip = file->private_data;
 	off = *ppos;
-	if (off >= CIMAX_BLOCK_SIZE)
+	if (off >= CIMAX_SIZE)
 		return 0; // EOF
-	if (off + count > CIMAX_BLOCK_SIZE)
-		count = CIMAX_BLOCK_SIZE - off;
-	if (count >= CIMAX_BLOCK_SIZE)
+	if (off + count > CIMAX_SIZE)
+		count = CIMAX_SIZE - off;
+	if (count > CIMAX_SIZE)
 		return -EFAULT;
+	if (!access_ok(VERIFY_WRITE, buf, count))
+		return -EINVAL;
 
-	rem = copy_from_user(block->base + off, buf, count);
-	if (rem)
-		return -EFAULT;
+	for (i = 0; i < count; i++) {
+		// deliberately copy byte-wise. order of access is visible to
+		// the device and may be important.
+		__get_user(temp, &buf[i]);
+		CIMAX_BYTE(chip->vmbase, off + i) = temp;
+	}
 
 	*ppos += count;
 	return count;
@@ -120,7 +127,7 @@ static loff_t cimax_lseek(struct file *file, loff_t offset, int orig)
 		offset += file->f_pos;
 		break;
 	case SEEK_END:
-		offset += CIMAX_BLOCK_SIZE;
+		offset += CIMAX_SIZE;
 		break;
 	case SEEK_SET:
 		break;
@@ -128,7 +135,7 @@ static loff_t cimax_lseek(struct file *file, loff_t offset, int orig)
 		offset = -EINVAL;
 	}
 
-	if (offset >= 0 && offset < CIMAX_BLOCK_SIZE) {
+	if (offset >= 0 && offset < CIMAX_SIZE) {
 		file->f_pos = offset;
 		ret = file->f_pos;
 	} else
@@ -138,45 +145,45 @@ static loff_t cimax_lseek(struct file *file, loff_t offset, int orig)
 	return ret;
 }
 
+static int cimax_fault(struct vm_area_struct *vma, struct vm_fault *vmf)
+{
+	struct cimax *chip;
+	unsigned long addr, pfn, off;
+
+	chip = vma->vm_file->private_data;
+	addr = (unsigned long) vmf->virtual_address;
+	off = vmf->pgoff << PAGE_SHIFT;
+	if (off >= CIMAX_SIZE)
+		return VM_FAULT_SIGBUS;
+
+	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+	pfn = CIMAX_BYTE_ADDR(chip->iobase, off) >> PAGE_SHIFT;
+	vm_insert_pfn(vma, addr, pfn);
+	return VM_FAULT_NOPAGE;
+}
+
+static const struct vm_operations_struct cimax_vmops = {
+	.fault = cimax_fault,
+};
+
 static int cimax_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	struct cimax_memblock *block;
-	unsigned int off, pgstart, vsize, psize;
-	
-	block = file->private_data;
-	pgstart = (block->addr >> PAGE_SHIFT) + vma->vm_pgoff;
+	// same sanity checking upfront: we cannot COW hardware
+	if (!(vma->vm_flags & VM_SHARED))
+		return -EINVAL;
 
-	off = vma->vm_pgoff << PAGE_SHIFT;
-	vsize = vma->vm_end - vma->vm_start;
-	psize = CIMAX_BLOCK_SIZE - off;
-	if (vsize > psize)
-		return -EINVAL; /* end is out of range */
-	
-	/* remap_pfn_range sets the appropriate protection flags, but
-	 * stupidly allows expanding... */
-	vma->vm_flags |= VM_DONTEXPAND;
-	if (remap_pfn_range(vma, vma->vm_start, pgstart, vsize,
-			    pgprot_noncached(vma->vm_page_prot)))
-		return -EAGAIN;
+	// the fault callback does the actual mapping. no need to prohibit
+	// mremap; the fault callback will send SIGBUS if resizing the mmap
+	// exceeds the addressable memory space.
+	vma->vm_flags |= VM_IO | VM_PFNMAP | VM_RESERVED | VM_CAN_NONLINEAR;
+	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
+	vma->vm_ops = &cimax_vmops;
 	return 0;
 }
 
 static int cimax_open(struct inode *inode, struct file *file)
 {
-	struct cimax_memblock *block = NULL;
-	unsigned int minor, i;
-
-	minor = iminor(inode);
-	for (i = 0; i < CIMAX_NUM_BLOCKS; i++)
-		if (chip.memblock[i].device.minor == minor) {
-			block = &chip.memblock[i];
-			break;
-		}
-	if (!block)
-		return -ENXIO;
-	
-	file->private_data = block;
-	
+	file->private_data = &chip;
 	return 0;
 }
 
@@ -714,38 +721,27 @@ static DEVICE_ATTR(presence, 0400, presence_show, NULL);
 
 static int cimax_devs_create(void)
 {
-	int res, i;
+	int res;
 	
-	for (i = 0; i < CIMAX_NUM_BLOCKS; i++) {
-		sprintf(chip.memblock[i].devname, "cimax-memblock%d", i);
-		chip.memblock[i].device.name = chip.memblock[i].devname;
-		chip.memblock[i].device.minor = MISC_DYNAMIC_MINOR;
-		chip.memblock[i].device.fops = &cimax_fops;
-		
-		res = misc_register(&chip.memblock[i].device);
-		if (res != 0)
-			break;
-	}
-	if (res == 0) {
-		chip.interrupt_device.name = "cimax-interrupt";
-		chip.interrupt_device.minor = MISC_DYNAMIC_MINOR;
-		chip.interrupt_device.fops = &cimax_int_fops;
-		res = misc_register(&chip.interrupt_device);
-	}
-		
+	chip.memory_device.name = "cimax";
+	chip.memory_device.minor = MISC_DYNAMIC_MINOR;
+	chip.memory_device.fops = &cimax_fops;
+	res = misc_register(&chip.memory_device);
 	if (res != 0)
-		for (; i >= 0; i--)
-			misc_deregister(&chip.memblock[i].device);
+		return res;
 
+	chip.interrupt_device.name = "cimax-interrupt";
+	chip.interrupt_device.minor = MISC_DYNAMIC_MINOR;
+	chip.interrupt_device.fops = &cimax_int_fops;
+	res = misc_register(&chip.interrupt_device);
+	if (res != 0)
+		misc_deregister(&chip.memory_device);
 	return res;
 }
 
 static int cimax_devs_remove(void)
 {
-	int i;
-	
-	for (i = CIMAX_NUM_BLOCKS - 1; i >= 0; i--)
-		misc_deregister(&chip.memblock[i].device);
+	misc_deregister(&chip.memory_device);
 	misc_deregister(&chip.interrupt_device);
 	
 	return 0;
@@ -817,7 +813,7 @@ static int __devexit cimax_remove(struct platform_device *pdev);
 static int __devinit cimax_probe(struct platform_device *pdev)
 {
 	static const struct sched_param max_prio = { .sched_priority = MAX_RT_PRIO-1 };
-	int res, i;
+	int res;
 	
 	chip.i2c_addr = CIMAX_I2C_ADDR;
 	chip.i2c_adapter = i2c_get_adapter(PNX8550_I2C_IP3203_BUS1);
@@ -831,14 +827,10 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 	PNX8550_XIO_SEL1 = PNX8550_XIO_SEL_ENAB | PNX8550_XIO_SEL_SIZE_64MB
 			| PNX8550_XIO_SEL_TYPE_68360 | PNX8550_XIO_SEL_USE_ACK
 			| (CIMAX_OFFSET_MB / 8) * PNX8550_XIO_SEL_OFFSET;
-	chip.base = PNX8550_BASE18_ADDR + 1024*1024*CIMAX_OFFSET_MB;
-	
-	for (i = 0; i < CIMAX_NUM_BLOCKS; i++) {
-		chip.memblock[i].addr = chip.base + (i << CIMAX_BLOCK_SEL_SHIFT);
-		// this trick really only works on MIPS, but that's true for the
-		// entire driver
-		chip.memblock[i].base = UNCAC_ADDR(phys_to_virt(chip.memblock[i].addr));
-	}
+	chip.iobase = PNX8550_BASE18_ADDR + 1024*1024*CIMAX_OFFSET_MB;
+	// this trick really only works on MIPS, but that's actually less
+	// restrictive than the rest of the driver
+	chip.vmbase = UNCAC_ADDR(phys_to_virt(chip.iobase));
 	
 	// create IRQ unmasking kernel thread (with realtime priority)
 	init_waitqueue_head(&chip.irq_unmask_queue);
@@ -896,7 +888,7 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 	ADD_SYSFS_FILE(presence);
 
 	printk(KERN_INFO "CIMaX at %08x, i2c address %02x, irq %d\n",
-			chip.base, chip.i2c_addr, chip.irq);
+			chip.iobase, chip.i2c_addr, chip.irq);
 	return 0;
 }
 

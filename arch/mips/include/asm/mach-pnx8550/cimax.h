@@ -101,7 +101,17 @@
 #define CIMAX_IRQ_STATUS PNX8550_GPIO_DATA(PNX8550_GPIO_IRQSSTAT_CIMAX)
 // the device provides 4 block of 64k each, selected by A24/25
 #define CIMAX_NUM_BLOCKS 4
-#define CIMAX_BLOCK_SIZE 65536
+#define CIMAX_BLOCK_SHIFT 16
+#define CIMAX_BLOCK_SIZE (1 << CIMAX_BLOCK_SHIFT)
+#define CIMAX_BLOCK_MASK (CIMAX_BLOCK_SIZE - 1)
 #define CIMAX_BLOCK_SEL_SHIFT 24
+#define CIMAX_SIZE (CIMAX_BLOCK_SIZE * CIMAX_NUM_BLOCKS)
+#define CIMAX_BLOCK_BASE(base, block) \
+	((base) + ((block) << CIMAX_BLOCK_SEL_SHIFT))
+#define CIMAX_BYTE_ADDR(base, off) \
+	(CIMAX_BLOCK_BASE(base, (off) >> CIMAX_BLOCK_SHIFT) \
+			+ ((off) & CIMAX_BLOCK_MASK))
+#define CIMAX_BYTE(base, off) \
+	(*(volatile uint8_t *) CIMAX_BYTE_ADDR(base, off))
 
 #endif
