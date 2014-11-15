@@ -46,8 +46,8 @@ struct snd_pnx8550ao1 {
 	struct snd_card *card;
 	unsigned int control;
 	void *buffer;
-	dma_addr_t buf1_dma;
-	dma_addr_t buf2_dma;
+	dma_addr_t buf_dma;
+	unsigned int size;
 	snd_pcm_uframes_t samples;
 	snd_pcm_uframes_t ptr;
 	struct snd_pcm_substream *substream;
@@ -201,24 +201,32 @@ static int snd_pnx8550ao1_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 
 	// we're not too flexible ;)
-	if (size != 2*PNX8550_AO_BUF_SIZE) {
-		printk(KERN_ERR "pnx8550ao1: attempt to allocate a %d byte buffer,"
-				" but we need %d\n", size, 2*PNX8550_AO_BUF_SIZE);
+	if (size & 1) {
+		printk(KERN_ERR "pnx8550ao1: attempt to allocate %d byte buffer"
+				" (odd size)\n", size);
 		return -EINVAL;
 	}
+	if (size > 2*PNX8550_AO_BUF_SIZE) {
+		printk(KERN_ERR "pnx8550ao1: attempt to allocate %d byte buffer"
+				" (max is %d)\n", size, 2*PNX8550_AO_BUF_SIZE);
+		return -EINVAL;
+	}
+	chip->size = size >> 1;
 	runtime->dma_area = chip->buffer;
-	runtime->dma_addr = chip->buf1_dma;
+	runtime->dma_addr = chip->buf_dma;
 	runtime->dma_bytes = PNX8550_AO_BUF_ALLOC;
 	return 0;
 }
 
 static int snd_pnx8550ao1_hw_free(struct snd_pcm_substream *substream)
 {
+	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
 
 	if (!runtime)
 		return -EINVAL;
 
+	chip->size = PNX8550_AO_BUF_SIZE;
 	runtime->dma_area = NULL;
 	runtime->dma_addr = 0;
 	runtime->dma_bytes = 0;
@@ -232,7 +240,7 @@ static int snd_pnx8550ao1_mmap(struct snd_pcm_substream *substream,
 	struct snd_pnx8550ao1 *chip = snd_pcm_substream_chip(substream);
 	
 	off = vma->vm_pgoff << PAGE_SHIFT;
-	pgstart = (chip->buf1_dma >> PAGE_SHIFT) + vma->vm_pgoff;
+	pgstart = (chip->buf_dma >> PAGE_SHIFT) + vma->vm_pgoff;
 	vsize = vma->vm_end - vma->vm_start;
 	psize = PNX8550_AO_BUF_ALLOC - off;
 	if (vsize > psize)
@@ -323,7 +331,7 @@ static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
 	}
 
 	chip->control = control;
-	chip->samples = bytes_to_frames(runtime, PNX8550_AO_BUF_SIZE);
+	chip->samples = bytes_to_frames(runtime, chip->size);
 	PNX8550_AO_DDS_CTL = dds;
 	dev_dbg(chip->dev, "pnx8550ao1: dds=%lu control=%08lx samples=%lu\n",
 			dds, control, chip->samples);
@@ -354,6 +362,7 @@ static int snd_pnx8550ao1_trigger(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 	PNX8550_AO_SIZE = chip->samples;
+	PNX8550_AO_BUF2_BASE = chip->buf_dma + chip->size;
 	PNX8550_AO_CTL = chip->control | PNX8550_AO_UDR | PNX8550_AO_HBE
 				| PNX8550_AO_BUF1 | PNX8550_AO_BUF2;
 
@@ -414,7 +423,7 @@ static int snd_pnx8550ao1_free(struct snd_pnx8550ao1 *chip)
 	free_irq(PNX8550_AO_IRQ, chip);
 
 	dma_free_coherent(NULL, PNX8550_AO_BUF_ALLOC, chip->buffer,
-			chip->buf1_dma);
+			chip->buf_dma);
 
 	/* release card data */
 	kfree(chip);
@@ -447,14 +456,13 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 
 	/* allocate DMA-capable buffers */
 	chip->buffer = dma_alloc_coherent(NULL, PNX8550_AO_BUF_ALLOC,
-					     &chip->buf1_dma, GFP_USER);
+					     &chip->buf_dma, GFP_USER);
 	if (chip->buffer == NULL) {
 		printk(KERN_ERR
 		       "pnx8550ao1: could not allocate ring buffers\n");
 		kfree(chip);
 		return -ENOMEM;
 	}
-	chip->buf2_dma = chip->buf1_dma + PNX8550_AO_BUF_SIZE;
 
 	/* clear and disable interrupts, and disable transmission, so the
 	* hardware doesn't interfere with proper initialization. */
@@ -479,9 +487,10 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	PNX8550_AO_FRAMING = PNX8550_AO_FRAMING_I2S;
 	PNX8550_AO_CFC = PNX8550_AO_CFC_I2S;
 	
-	/* setup buffer base addresses and sizes */
-	PNX8550_AO_BUF1_BASE = chip->buf1_dma;
-	PNX8550_AO_BUF2_BASE = chip->buf2_dma;
+	/* setup buffer base addresses and sizes. using the same buffer for
+	 * both will do for now. */
+	PNX8550_AO_BUF1_BASE = chip->buf_dma;
+	PNX8550_AO_BUF2_BASE = chip->buf_dma;
 	/* start the chip, but with interrupts disabled, and playing silence */
 	PNX8550_AO_SIZE = chip->samples = PNX8550_AO_SAMPLES;
 	memset(chip->buffer, 0, PNX8550_AO_BUF_ALLOC);
@@ -531,10 +540,8 @@ static int __devinit snd_pnx8550ao1_probe(struct platform_device *pdev)
 	strcpy(card->shortname, "PNX8550 AO1");
 	strcpy(card->driver, card->shortname);
 	strcpy(card->longname, "PNX8550 Audio Out 1");
-	printk(KERN_INFO "pnx8550ao1: %s driver buf1=%08x buf2=%08x\n",
-			card->longname, chip->buf1_dma, chip->buf2_dma);
-	dev_dbg(chip->dev, "pnx8550ao1: buffer1=%08x buffer2=%08x\n",
-			chip->buf1_dma, chip->buf2_dma);
+	printk(KERN_INFO "pnx8550ao1: %s driver buffer=%08x dma=%08x\n",
+			card->longname, (uint32_t) chip->buffer, chip->buf_dma);
 
 	err = snd_card_register(card);
 	if (err < 0) {
