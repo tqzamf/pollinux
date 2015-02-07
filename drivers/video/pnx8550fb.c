@@ -217,9 +217,9 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 	anabel_video_set_reg(par, 0xba, 0x70);
 	// DAC configured for CVBS + RGB (instead of Y/C)
 	anabel_video_set_reg(par, 0x2d, 0x40);
-	// set SD (not HD) mode; interface config
+	// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
 	anabel_video_set_reg(par, 0x3a, 0x48);
-	anabel_video_set_reg(par, 0x95, 0x00);
+	anabel_video_set_reg(par, 0x95, 0x80);
 
 	// unblank the screen
 	anabel_video_set_reg(par, 0x6e, 0x00);
@@ -328,6 +328,7 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
         qvcp_set_reg(par, 0x014, 0x00950105);
         qvcp_set_reg(par, 0x028, 0x013002DD);
         qvcp_set_reg(par, 0x02c, 0x012F02DC);
+        qvcp_set_reg(par, 0x230, 0x80100030);
         qvcp_set_reg(par, 0x234, 0x00F002d0);
     }
     else // default is PAL
@@ -340,20 +341,22 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
         qvcp_set_reg(par, 0x014, 0x00AF0137);
         qvcp_set_reg(par, 0x028, 0x012D02DD);
         qvcp_set_reg(par, 0x02c, 0x012C02DC);
+        qvcp_set_reg(par, 0x230, 0x80100030);
         qvcp_set_reg(par, 0x234, 0x012002d0);
     }
-    // configure and enable timing generator and video output
+    // configure and enable timing generator
     qvcp_set_reg(par, 0x020, 0x20050005);
-    qvcp_set_reg(par, 0x03c, 0x0fc01401);
+    // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
+    qvcp_set_reg(par, 0x03c, 0x0fe81400);
     // disable VBI generation
     qvcp_set_reg(par, 0x034, 0x00000000);
     qvcp_set_reg(par, 0x038, 0x00000000);
     // pedestals off
     qvcp_set_reg(par, 0x05c, 0x0);
     qvcp_set_reg(par, 0x060, 0x0);
-    // noise shaping on
-    qvcp_set_reg(par, 0x070, 0x00130013);
-    qvcp_set_reg(par, 0x074, 0x803F3F3F);
+    // gamma correction on, noise shaping (dithering) for 10 bits
+    qvcp_set_reg(par, 0x074, 0xC03F3F3F);
+    qvcp_set_reg(par, 0x070, 0x00150015);
     // set default background color: black
     qvcp_set_reg(par, 0x01c, 0x800000);
     // set layer base address and size
@@ -363,7 +366,6 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
     qvcp_set_reg(par, 0x20c, par->iobase + (PNX8550FB_STRIDE*2));
     qvcp_set_reg(par, 0x210, PNX8550FB_STRIDE*4);
     qvcp_set_reg(par, 0x214, 8);
-    qvcp_set_reg(par, 0x230, 0x80000000 | (16<<16)|(0x30));
     qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH);
     // set pixel format
     qvcp_set_reg(par, 0x23c, 0x20);
