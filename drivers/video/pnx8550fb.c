@@ -134,8 +134,11 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 	anabel_video_set_reg(par, 0x2c, 0x00);
 	anabel_video_set_reg(par, 0x54, 0x00);
 	anabel_video_set_reg(par, 0x6f, 0x00);
+	// don't perform signature analysis
+	anabel_video_set_reg(par, 0xba, 0x70);
 
-    if (par->std == STD_NTSC) {
+    switch (par->std) {
+	case STD_NTSC:
 		// color burst config
 		anabel_video_set_reg(par, 0x28, 0x25);
 		anabel_video_set_reg(par, 0x29, 0x1d);
@@ -173,7 +176,14 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 		anabel_video_set_reg(par, 0xc4, 0x0A);
 		anabel_video_set_reg(par, 0xc5, 0x0A);
 		anabel_video_set_reg(par, 0xc6, 0x01);
-	} else { // default is PAL
+		// DAC configured for CVBS + RGB (instead of Y/C)
+		anabel_video_set_reg(par, 0x2d, 0x40);
+		// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
+		anabel_video_set_reg(par, 0x3a, 0x48);
+		anabel_video_set_reg(par, 0x95, 0x80);
+		break;
+	default: // default is PAL
+	case STD_PAL:
 		// color burst config
 		anabel_video_set_reg(par, 0x28, 0x21);
 		anabel_video_set_reg(par, 0x29, 0x1d);
@@ -211,15 +221,13 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 		anabel_video_set_reg(par, 0xc4, 0x0A);
 		anabel_video_set_reg(par, 0xc5, 0x0A);
 		anabel_video_set_reg(par, 0xc6, 0x00);
+		// DAC configured for CVBS + RGB (instead of Y/C)
+		anabel_video_set_reg(par, 0x2d, 0x40);
+		// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
+		anabel_video_set_reg(par, 0x3a, 0x48);
+		anabel_video_set_reg(par, 0x95, 0x80);
+		break;
 	}
-
-	// don't perform signature analysis
-	anabel_video_set_reg(par, 0xba, 0x70);
-	// DAC configured for CVBS + RGB (instead of Y/C)
-	anabel_video_set_reg(par, 0x2d, 0x40);
-	// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
-	anabel_video_set_reg(par, 0x3a, 0x48);
-	anabel_video_set_reg(par, 0x95, 0x80);
 
 	// unblank the screen
 	anabel_video_set_reg(par, 0x6e, 0x00);
@@ -258,7 +266,12 @@ static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
 static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
 {
     // restore QVCP PLL & DDS, just in case
-    qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
+    switch (par->std) {
+    default:
+        // SD uses plain old 27MHz
+        qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
+        break;
+    }
     qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
     // enable QVCP clocks
     qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
@@ -318,8 +331,8 @@ void pnx8550fb_set_blanking(struct pnx8550fb_par *par, int blank)
 static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 {
     // setup screen geometry
-    if (par->std == STD_NTSC)
-    {
+    switch (par->std) {
+    case STD_NTSC:
         qvcp_set_reg(par, 0x000, 0x03590105);
         qvcp_set_reg(par, 0x004, 0x02d00359);
         qvcp_set_reg(par, 0x008, 0x01070012);
@@ -328,11 +341,15 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
         qvcp_set_reg(par, 0x014, 0x00950105);
         qvcp_set_reg(par, 0x028, 0x013002DD);
         qvcp_set_reg(par, 0x02c, 0x012F02DC);
-        qvcp_set_reg(par, 0x230, 0x80100030);
+        qvcp_set_reg(par, 0x230, 0x80000030);
         qvcp_set_reg(par, 0x234, 0x00F002d0);
-    }
-    else // default is PAL
-    {
+        // configure and enable timing generator
+        qvcp_set_reg(par, 0x020, 0x20050005);
+        // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
+        qvcp_set_reg(par, 0x03c, 0x0fe81400);
+        break;
+    default: // default is PAL
+    case STD_PAL:
         qvcp_set_reg(par, 0x000, 0x035f0137);
         qvcp_set_reg(par, 0x004, 0x02d0035f);
         qvcp_set_reg(par, 0x008, 0x01390016);
@@ -341,13 +358,14 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
         qvcp_set_reg(par, 0x014, 0x00AF0137);
         qvcp_set_reg(par, 0x028, 0x012D02DD);
         qvcp_set_reg(par, 0x02c, 0x012C02DC);
-        qvcp_set_reg(par, 0x230, 0x80100030);
+        qvcp_set_reg(par, 0x230, 0x80000030);
         qvcp_set_reg(par, 0x234, 0x012002d0);
+        // configure and enable timing generator
+        qvcp_set_reg(par, 0x020, 0x20050005);
+        // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
+        qvcp_set_reg(par, 0x03c, 0x0fe81400);
+        break;
     }
-    // configure and enable timing generator
-    qvcp_set_reg(par, 0x020, 0x20050005);
-    // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
-    qvcp_set_reg(par, 0x03c, 0x0fe81400);
     // disable VBI generation
     qvcp_set_reg(par, 0x034, 0x00000000);
     qvcp_set_reg(par, 0x038, 0x00000000);
@@ -360,22 +378,24 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
     // set default background color: black
     qvcp_set_reg(par, 0x01c, 0x800000);
     // set layer base address and size
-    qvcp_set_reg(par, 0x200, par->iobase);
-    qvcp_set_reg(par, 0x204, PNX8550FB_STRIDE*4);
-    qvcp_set_reg(par, 0x208, PNX8550FB_STRIDE*2);
-    qvcp_set_reg(par, 0x20c, par->iobase + (PNX8550FB_STRIDE*2));
-    qvcp_set_reg(par, 0x210, PNX8550FB_STRIDE*4);
-    qvcp_set_reg(par, 0x214, 8);
-    qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH);
-    // set pixel format
-    qvcp_set_reg(par, 0x23c, 0x20);
-    qvcp_set_reg(par, 0x238, 0x0);
+    switch (par->std) {
+    default:
+        qvcp_set_reg(par, 0x200, par->iobase);
+        qvcp_set_reg(par, 0x204, 2 * PNX8550FB_STRIDE);
+        qvcp_set_reg(par, 0x208, PNX8550FB_LINE_SIZE_SD);
+        qvcp_set_reg(par, 0x20c, par->iobase + PNX8550FB_STRIDE);
+        qvcp_set_reg(par, 0x210, 2 * PNX8550FB_STRIDE);
+        qvcp_set_reg(par, 0x214, 8);
+        qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH_SD);
+        qvcp_set_reg(par, 0x23c, 0x20);
+    }
     // disable chroma keying
     qvcp_set_reg(par, 0x25c, 0x0);
     qvcp_set_reg(par, 0x26c, 0x0);
     qvcp_set_reg(par, 0x27c, 0x0);
     qvcp_set_reg(par, 0x28c, 0x0);
     // color mode = ARGB 8888
+    qvcp_set_reg(par, 0x238, 0x0);
     qvcp_set_reg(par, 0x2bc, 0xec);
     qvcp_set_reg(par, 0x2c4, 0xffe7eff7);
     // brightness / contrast / gamma
@@ -427,11 +447,11 @@ static struct fb_fix_screeninfo fix = {
 	.type =        FB_TYPE_PACKED_PIXELS,
 	.visual =      FB_VISUAL_TRUECOLOR,
 	.accel =       FB_ACCEL_NONE,
-	.line_length = PNX8550FB_LINE_SIZE,
+	.line_length = PNX8550FB_STRIDE,
 };
 
 static struct fb_var_screeninfo def = {
-	.xres_virtual =   PNX8550FB_WIDTH,
+	.xres_virtual =   PNX8550FB_WIDTH_SD,
 	.yres_virtual =   PNX8550FB_HEIGHT_PAL,
 	.bits_per_pixel = 32,
 	.red =            { 16, 8, 0 },
@@ -443,8 +463,8 @@ static struct fb_var_screeninfo def = {
 	.width =          -1,
 	// these borders are nonsense for both PAL and NTSC, but provide a
 	// centered initial display
-	.left_margin =    PNX8550FB_MARGIN_LEFT,
-	.right_margin =   PNX8550FB_MARGIN_RIGHT,
+	.left_margin =    PNX8550FB_MARGIN_LEFT_SD,
+	.right_margin =   PNX8550FB_MARGIN_RIGHT_SD,
 	.upper_margin =   PNX8550FB_MARGIN_UPPER_PAL,
 	.lower_margin =   PNX8550FB_MARGIN_LOWER_PAL,
 	// at least make sure the timings are correct
@@ -467,21 +487,29 @@ static int pnx8550fb_standard_set(const char *val,
 	if (n > 0 && val[n - 1] == '\n')
 		n--;
 
-	if (!strncasecmp(val, "ntsc", n)) {
-		std = STD_NTSC;
-		def.yres_virtual = PNX8550FB_HEIGHT_NTSC;
-		def.upper_margin = PNX8550FB_MARGIN_UPPER_NTSC;
-		def.lower_margin = PNX8550FB_MARGIN_LOWER_NTSC;
-		def.vsync_len = PNX8550FB_VSYNC_NTSC;
-		def.hsync_len = PNX8550FB_HSYNC_NTSC;
-	} else if (!strncasecmp(val, "pal", n)
+	if (!strncasecmp(val, "pal", n)
 			|| !strncasecmp(val, "default", n)) {
 		std = STD_PAL;
 		def.yres_virtual = PNX8550FB_HEIGHT_PAL;
+		def.xres_virtual = PNX8550FB_WIDTH_SD;
 		def.upper_margin = PNX8550FB_MARGIN_UPPER_PAL;
 		def.lower_margin = PNX8550FB_MARGIN_LOWER_PAL;
+		def.left_margin = PNX8550FB_MARGIN_LEFT_SD;
+		def.right_margin = PNX8550FB_MARGIN_RIGHT_SD;
 		def.vsync_len = PNX8550FB_VSYNC_PAL;
 		def.hsync_len = PNX8550FB_HSYNC_PAL;
+		def.vmode = FB_VMODE_INTERLACED;
+	} else if (!strncasecmp(val, "ntsc", n)) {
+		std = STD_NTSC;
+		def.yres_virtual = PNX8550FB_HEIGHT_NTSC;
+		def.xres_virtual = PNX8550FB_WIDTH_SD;
+		def.upper_margin = PNX8550FB_MARGIN_UPPER_NTSC;
+		def.lower_margin = PNX8550FB_MARGIN_LOWER_NTSC;
+		def.left_margin = PNX8550FB_MARGIN_LEFT_SD;
+		def.right_margin = PNX8550FB_MARGIN_RIGHT_SD;
+		def.vsync_len = PNX8550FB_VSYNC_NTSC;
+		def.hsync_len = PNX8550FB_HSYNC_NTSC;
+		def.vmode = FB_VMODE_INTERLACED;
 	} else
 		return -EINVAL;
 
@@ -511,6 +539,7 @@ static struct kernel_param_ops pnx8550fb_standard_ops = {
 };
 
 module_param_cb(standard, &pnx8550fb_standard_ops, &std, 0644);
+MODULE_PARM_DESC(standard, "video standard: PAL, NTSC. use fbset to apply!");
 
 /* Dummy palette to make fbcon work. */
 static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
