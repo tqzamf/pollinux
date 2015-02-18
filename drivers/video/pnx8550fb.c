@@ -181,6 +181,8 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 		// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
 		anabel_video_set_reg(par, 0x3a, 0x48);
 		anabel_video_set_reg(par, 0x95, 0x80);
+		// unblank the screen
+		anabel_video_set_reg(par, 0x6e, 0x00);
 		break;
 	default: // default is PAL
 	case STD_PAL:
@@ -226,11 +228,10 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 		// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
 		anabel_video_set_reg(par, 0x3a, 0x48);
 		anabel_video_set_reg(par, 0x95, 0x80);
+		// unblank the screen
+		anabel_video_set_reg(par, 0x6e, 0x00);
 		break;
 	}
-
-	// unblank the screen
-	anabel_video_set_reg(par, 0x6e, 0x00);
 }
 
 static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
@@ -255,6 +256,8 @@ static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
     // Anabel stops responding to I²C commands, so we just leave the PLL
     // and output clock running instead. doesn't seem to draw any more
     // power than stopping it.
+    // uses 27MHz both for HD and SD. the DACs are disabled and there are no
+    // pixels to output anyway, so the frequency doesn't matter.
     qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
     qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
     qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
@@ -265,19 +268,19 @@ static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
 
 static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
 {
-    // restore QVCP PLL & DDS, just in case
+    // setup QVCP clocks
     switch (par->std) {
     default:
-        // SD uses plain old 27MHz
+        // SD mode requires 27MHz interface clock
         qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
+        qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
+        // SD pixel clock is 13.5MHz (half the interface clock)
+        qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
+                | PNX8550_CM_QVCP_CLK_FCLOCK);
+        qvcp_set_clock(par, pix_clk, PNX8550_CM_QVCP_CLK_ENABLE
+                | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
         break;
     }
-    qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
-    // enable QVCP clocks
-    qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
-			| PNX8550_CM_QVCP_CLK_FCLOCK);
-	qvcp_set_clock(par, pix_clk, PNX8550_CM_QVCP_CLK_ENABLE
-			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
     // process layers at 17MHz. slow but absolutely sufficient with a
     // single layer.
     qvcp_set_clock(par, proc_clk, PNX8550_CM_QVCP_CLK_ENABLE
@@ -451,8 +454,6 @@ static struct fb_fix_screeninfo fix = {
 };
 
 static struct fb_var_screeninfo def = {
-	.xres_virtual =   PNX8550FB_WIDTH_SD,
-	.yres_virtual =   PNX8550FB_HEIGHT_PAL,
 	.bits_per_pixel = 32,
 	.red =            { 16, 8, 0 },
 	.green =          { 8,  8, 0 },
@@ -461,21 +462,10 @@ static struct fb_var_screeninfo def = {
 	.activate =       FB_ACTIVATE_NOW,
 	.height =         -1,
 	.width =          -1,
-	// these borders are nonsense for both PAL and NTSC, but provide a
-	// centered initial display
-	.left_margin =    PNX8550FB_MARGIN_LEFT_SD,
-	.right_margin =   PNX8550FB_MARGIN_RIGHT_SD,
-	.upper_margin =   PNX8550FB_MARGIN_UPPER_PAL,
-	.lower_margin =   PNX8550FB_MARGIN_LOWER_PAL,
-	// at least make sure the timings are correct
-	.pixclock =       74074,
-	.hsync_len =      PNX8550FB_HSYNC_PAL,
-	.vsync_len =      PNX8550FB_VSYNC_PAL,
 	.sync =           FB_SYNC_BROADCAST,
-	.vmode =          FB_VMODE_INTERLACED,
 };
 
-enum standard std = STD_PAL;
+enum standard std = STD_UNDEFINED;
 
 static int pnx8550fb_standard_set(const char *val,
 		const struct kernel_param *kp)
@@ -498,6 +488,7 @@ static int pnx8550fb_standard_set(const char *val,
 		def.right_margin = PNX8550FB_MARGIN_RIGHT_SD;
 		def.vsync_len = PNX8550FB_VSYNC_PAL;
 		def.hsync_len = PNX8550FB_HSYNC_PAL;
+		def.pixclock = PNX8550FB_PIXCLOCK_SD;
 		def.vmode = FB_VMODE_INTERLACED;
 	} else if (!strncasecmp(val, "ntsc", n)) {
 		std = STD_NTSC;
@@ -509,10 +500,14 @@ static int pnx8550fb_standard_set(const char *val,
 		def.right_margin = PNX8550FB_MARGIN_RIGHT_SD;
 		def.vsync_len = PNX8550FB_VSYNC_NTSC;
 		def.hsync_len = PNX8550FB_HSYNC_NTSC;
+		def.pixclock = PNX8550FB_PIXCLOCK_SD;
 		def.vmode = FB_VMODE_INTERLACED;
 	} else
 		return -EINVAL;
 
+	// (re)calculate default sizes
+	def.xres = def.xres_virtual - def.left_margin - def.right_margin;
+	def.yres = def.yres_virtual - def.upper_margin - def.lower_margin;
 	return 0;
 }
 
@@ -691,6 +686,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	struct fb_info *info;
 	dma_addr_t fb_base;
 	void *fb_ptr;
+	char *standard;
 	
 	info = framebuffer_alloc(sizeof(struct pnx8550fb_par)
 			+ sizeof(u32) * PNX8550FB_PSEUDO_PALETTE_SIZE, &dev->dev);
@@ -744,10 +740,20 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 
 	// only enable display once the driver is already registered
 	pnx8550fb_setup_display(par);
+	switch (par->std) {
+	case STD_PAL:
+		standard = "PAL";
+		break;
+	case STD_NTSC:
+		standard = "NTSC";
+		break;
+	default:
+		standard = "unknown";
+		break;
+	}
 	printk(KERN_INFO "fb%d: PNX8550-STB810 %s framebuffer at 0x%08x / %08x\n",
-			info->node,
-			(def.yres_virtual == PNX8550FB_HEIGHT_PAL) ? "PAL" : "NTSC",
-			(unsigned int) fb_base, (unsigned int) fb_ptr);
+			info->node, standard, (unsigned int) fb_base,
+			(unsigned int) fb_ptr);
 	return 0;
 }
 
@@ -804,7 +810,9 @@ static int __init pnx8550_framebuffer_init(void)
 		} else if (!strncasecmp(option, "pal", 3)) {
 			pnx8550fb_standard_set("pal", NULL);
 			option += 3;
-		}
+		} else if (std == STD_UNDEFINED)
+			// pick default standard only if none selected by module param
+			pnx8550fb_standard_set("default", NULL);
 
 		// parse (possibly partial) sizes and apply
 		rest = strchr(option, 'x');
@@ -819,14 +827,9 @@ static int __init pnx8550_framebuffer_init(void)
 		}
 		if (!kstrtol(option, 10, &res))
 			def.xres = res;
-	}
+	} else if (std == STD_UNDEFINED)
+		pnx8550fb_standard_set("default", NULL);
 
-	// calculate default sizes if necessary
-	if (!def.xres)
-		def.xres = def.xres_virtual - def.left_margin - def.right_margin;
-	if (!def.yres)
-		def.yres = def.yres_virtual - def.upper_margin - def.lower_margin;
-	
 	return platform_driver_register(&pnx8550_framebuffer_driver);
 }
 
