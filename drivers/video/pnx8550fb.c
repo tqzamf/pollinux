@@ -39,6 +39,7 @@ enum standard {
 	STD_UNDEFINED = 0,
 	STD_PAL,
 	STD_NTSC,
+	STD_FAKEHD,
 };
 
 struct pnx8550fb_par {
@@ -90,7 +91,7 @@ static void anabel_video_set_reg(struct pnx8550fb_par *par,
 	i2c_set_reg(par->i2c, par->video_addr, reg, value);
 }
 
-// sets a single register in the primary video channel of ANABEL
+// sets a single clock register in the primary video channel of ANABEL
 static void anabel_clock_set_reg(struct pnx8550fb_par *par,
 		unsigned char reg, unsigned char value)
 {
@@ -138,6 +139,209 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 	anabel_video_set_reg(par, 0xba, 0x70);
 
     switch (par->std) {
+	case STD_FAKEHD:
+		// compiled screen layout for 1080i50 at 99MHz
+		// value 0: low:   -512 -358 -358
+		anabel_video_set_reg(par, 0xbe, 0x00);
+		anabel_video_set_reg(par, 0xbf, 0x9a);
+		anabel_video_set_reg(par, 0xc0, 0x9a);
+		anabel_video_set_reg(par, 0xc1, 0x2a);
+		anabel_video_set_reg(par, 0x98, 0x00);
+		anabel_video_set_reg(par, 0x98, 0x01);
+		// value 1: blank: -205    0    0
+		anabel_video_set_reg(par, 0xbe, 0x33);
+		anabel_video_set_reg(par, 0xbf, 0x00);
+		anabel_video_set_reg(par, 0xc0, 0x00);
+		anabel_video_set_reg(par, 0xc1, 0x30);
+		anabel_video_set_reg(par, 0x98, 0x01);
+		anabel_video_set_reg(par, 0x98, 0x02);
+		// value 2: high:  +102 +358 +358
+		anabel_video_set_reg(par, 0xbe, 0x66);
+		anabel_video_set_reg(par, 0xbf, 0x66);
+		anabel_video_set_reg(par, 0xc0, 0x66);
+		anabel_video_set_reg(par, 0xc1, 0x05);
+		anabel_video_set_reg(par, 0x98, 0x02);
+		anabel_video_set_reg(par, 0x98, 0x03);
+		// pattern 1: hsync: 29x low, 29x high, 99x blank
+		anabel_video_set_reg(par, 0x87, 0xc8);
+		anabel_video_set_reg(par, 0x88, 0x81);
+		anabel_video_set_reg(par, 0x89, 0x72);
+		anabel_video_set_reg(par, 0x8a, 0x90);
+		anabel_video_set_reg(par, 0x8b, 0x62);
+		anabel_video_set_reg(par, 0x8c, 0x00);
+		anabel_video_set_reg(par, 0x8d, 0x00);
+		anabel_video_set_reg(par, 0x8e, 0x00);
+		anabel_video_set_reg(par, 0x8e, 0x01);
+		// pattern 2: halfsync: 587x low, 136x blank
+		anabel_video_set_reg(par, 0x87, 0xa8);
+		anabel_video_set_reg(par, 0x88, 0x64);
+		anabel_video_set_reg(par, 0x89, 0x1e);
+		anabel_video_set_reg(par, 0x8a, 0x02);
+		anabel_video_set_reg(par, 0x8b, 0x00);
+		anabel_video_set_reg(par, 0x8c, 0x00);
+		anabel_video_set_reg(par, 0x8d, 0x00);
+		anabel_video_set_reg(par, 0x8e, 0x01);
+		anabel_video_set_reg(par, 0x8e, 0x02);
+		// pattern 3: halfblank: 587x blank, 136x blank
+		anabel_video_set_reg(par, 0x87, 0xa9);
+		anabel_video_set_reg(par, 0x88, 0x64);
+		anabel_video_set_reg(par, 0x89, 0x1e);
+		anabel_video_set_reg(par, 0x8a, 0x02);
+		anabel_video_set_reg(par, 0x8b, 0x00);
+		anabel_video_set_reg(par, 0x8c, 0x00);
+		anabel_video_set_reg(par, 0x8d, 0x00);
+		anabel_video_set_reg(par, 0x8e, 0x02);
+		anabel_video_set_reg(par, 0x8e, 0x03);
+		// pattern 4: blank: 640x blank !640x, 640x blank, 323x blank
+		anabel_video_set_reg(par, 0x87, 0xf9);
+		anabel_video_set_reg(par, 0x88, 0x67);
+		anabel_video_set_reg(par, 0x89, 0xfe);
+		anabel_video_set_reg(par, 0x8a, 0x99);
+		anabel_video_set_reg(par, 0x8b, 0x42);
+		anabel_video_set_reg(par, 0x8c, 0x01);
+		anabel_video_set_reg(par, 0x8d, 0x00);
+		anabel_video_set_reg(par, 0x8e, 0x03);
+		anabel_video_set_reg(par, 0x8e, 0x04);
+		// pattern 5: video: 640x *blank, 640x *blank, 323x blank
+		anabel_video_set_reg(par, 0x87, 0xf1);
+		anabel_video_set_reg(par, 0x88, 0x67);
+		anabel_video_set_reg(par, 0x89, 0xfc);
+		anabel_video_set_reg(par, 0x8a, 0x99);
+		anabel_video_set_reg(par, 0x8b, 0x42);
+		anabel_video_set_reg(par, 0x8c, 0x01);
+		anabel_video_set_reg(par, 0x8d, 0x00);
+		anabel_video_set_reg(par, 0x8e, 0x04);
+		anabel_video_set_reg(par, 0x8e, 0x05);
+		// line type 1: syncsync:   hsync, halfsync,  hsync, halfsync
+		anabel_video_set_reg(par, 0x83, 0x51);
+		anabel_video_set_reg(par, 0x84, 0x04);
+		anabel_video_set_reg(par, 0x85, 0x00);
+		anabel_video_set_reg(par, 0x86, 0x00);
+		anabel_video_set_reg(par, 0x86, 0x01);
+		// line type 2: blankblank: hsync, halfblank, hsync, halfblank
+		anabel_video_set_reg(par, 0x83, 0x59);
+		anabel_video_set_reg(par, 0x84, 0x06);
+		anabel_video_set_reg(par, 0x85, 0x00);
+		anabel_video_set_reg(par, 0x86, 0x01);
+		anabel_video_set_reg(par, 0x86, 0x02);
+		// line type 3: syncblank:  hsync, halfsync,  hsync, halfblank
+		anabel_video_set_reg(par, 0x83, 0x51);
+		anabel_video_set_reg(par, 0x84, 0x06);
+		anabel_video_set_reg(par, 0x85, 0x00);
+		anabel_video_set_reg(par, 0x86, 0x02);
+		anabel_video_set_reg(par, 0x86, 0x03);
+		// line type 4: blanksync:  hsync, halfblank, hsync, halfsync
+		anabel_video_set_reg(par, 0x83, 0x59);
+		anabel_video_set_reg(par, 0x84, 0x04);
+		anabel_video_set_reg(par, 0x85, 0x00);
+		anabel_video_set_reg(par, 0x86, 0x03);
+		anabel_video_set_reg(par, 0x86, 0x04);
+		// line type 5: blank: hsync, blank
+		anabel_video_set_reg(par, 0x83, 0x21);
+		anabel_video_set_reg(par, 0x84, 0x00);
+		anabel_video_set_reg(par, 0x85, 0x00);
+		anabel_video_set_reg(par, 0x86, 0x04);
+		anabel_video_set_reg(par, 0x86, 0x05);
+		// line type 6: video: hsync, video!
+		anabel_video_set_reg(par, 0x83, 0x29);
+		anabel_video_set_reg(par, 0x84, 0x00);
+		anabel_video_set_reg(par, 0x85, 0x00);
+		anabel_video_set_reg(par, 0x86, 0x05);
+		anabel_video_set_reg(par, 0x86, 0x06);
+		// line count 0: 5x syncsync
+		anabel_video_set_reg(par, 0x80, 0x05);
+		anabel_video_set_reg(par, 0x81, 0x04);
+		anabel_video_set_reg(par, 0x82, 0x00);
+		anabel_video_set_reg(par, 0x82, 0x01);
+		// line count 1: 1x blankblank
+		anabel_video_set_reg(par, 0x80, 0x01);
+		anabel_video_set_reg(par, 0x81, 0x08);
+		anabel_video_set_reg(par, 0x82, 0x01);
+		anabel_video_set_reg(par, 0x82, 0x02);
+		// line count 2: 14x blank !14x
+		anabel_video_set_reg(par, 0x80, 0x0e);
+		anabel_video_set_reg(par, 0x81, 0x14);
+		anabel_video_set_reg(par, 0x82, 0x02);
+		anabel_video_set_reg(par, 0x82, 0x03);
+		// line count 3: 540x video
+		anabel_video_set_reg(par, 0x80, 0x1c);
+		anabel_video_set_reg(par, 0x81, 0x1a);
+		anabel_video_set_reg(par, 0x82, 0x03);
+		anabel_video_set_reg(par, 0x82, 0x04);
+		// line count 4: 2x blank
+		anabel_video_set_reg(par, 0x80, 0x02);
+		anabel_video_set_reg(par, 0x81, 0x14);
+		anabel_video_set_reg(par, 0x82, 0x04);
+		anabel_video_set_reg(par, 0x82, 0x05);
+		// line count 5: 1x blanksync
+		anabel_video_set_reg(par, 0x80, 0x01);
+		anabel_video_set_reg(par, 0x81, 0x10);
+		anabel_video_set_reg(par, 0x82, 0x05);
+		anabel_video_set_reg(par, 0x82, 0x06);
+		// line count 6: 4x syncsync
+		anabel_video_set_reg(par, 0x80, 0x04);
+		anabel_video_set_reg(par, 0x81, 0x04);
+		anabel_video_set_reg(par, 0x82, 0x06);
+		anabel_video_set_reg(par, 0x82, 0x07);
+		// line count 7: 1x syncblank
+		anabel_video_set_reg(par, 0x80, 0x01);
+		anabel_video_set_reg(par, 0x81, 0x0c);
+		anabel_video_set_reg(par, 0x82, 0x07);
+		anabel_video_set_reg(par, 0x82, 0x08);
+		// line count 8: 15x blank
+		anabel_video_set_reg(par, 0x80, 0x0f);
+		anabel_video_set_reg(par, 0x81, 0x14);
+		anabel_video_set_reg(par, 0x82, 0x08);
+		anabel_video_set_reg(par, 0x82, 0x09);
+		// line count 9: 540x video
+		anabel_video_set_reg(par, 0x80, 0x1c);
+		anabel_video_set_reg(par, 0x81, 0x1a);
+		anabel_video_set_reg(par, 0x82, 0x09);
+		anabel_video_set_reg(par, 0x82, 0x0a);
+		// line count 10: 2x blank
+		anabel_video_set_reg(par, 0x80, 0x02);
+		anabel_video_set_reg(par, 0x81, 0x14);
+		anabel_video_set_reg(par, 0x82, 0x0a);
+		anabel_video_set_reg(par, 0x82, 0x0b);
+		// line count EOF
+		anabel_video_set_reg(par, 0x80, 0x00);
+		anabel_video_set_reg(par, 0x81, 0x00);
+		anabel_video_set_reg(par, 0x82, 0x0b);
+		anabel_video_set_reg(par, 0x82, 0x0c);
+		// trigger position
+		anabel_video_set_reg(par, 0x98, 0x13);
+		anabel_video_set_reg(par, 0x99, 0x0e);
+		anabel_video_set_reg(par, 0x9a, 0x00);
+		anabel_video_set_reg(par, 0x9b, 0x7f);
+		anabel_video_set_reg(par, 0x9c, 0x02);
+		anabel_video_set_reg(par, 0x9d, 0x20);
+		// screen size: 1760x1125 !0x0
+		anabel_video_set_reg(par, 0xae, 0x64);
+		anabel_video_set_reg(par, 0xaf, 0x04);
+		anabel_video_set_reg(par, 0xb0, 0xdf);
+		anabel_video_set_reg(par, 0xb1, 0x06);
+		anabel_video_set_reg(par, 0xb2, 0x00);
+		anabel_video_set_reg(par, 0xb3, 0x00);
+		anabel_video_set_reg(par, 0xb4, 0x00);
+		anabel_video_set_reg(par, 0xb5, 0x00);
+		// blank offsets + gain for Y/U/V
+		anabel_video_set_reg(par, 0xc7, 0x80);
+		anabel_video_set_reg(par, 0xc8, 0x80);
+		anabel_video_set_reg(par, 0xc9, 0x80);
+		anabel_video_set_reg(par, 0xbc, 0x00);
+		anabel_video_set_reg(par, 0xa8, 0x30);
+		anabel_video_set_reg(par, 0xa9, 0x00);
+		anabel_video_set_reg(par, 0xaa, 0x00);
+		// DAC configured for YUV / RGB (Y/C disabled)
+		anabel_video_set_reg(par, 0x2d, 0x00);
+		// set HD (not SD) mode; 10-bit YUVhd 4:2:2 single-D1 interface
+		anabel_video_set_reg(par, 0x3a, 0x47);
+		anabel_video_set_reg(par, 0x95, 0x84);
+		// insert generated sync signal into all (!) components
+		anabel_video_set_reg(par, 0xa6, 0xfd);
+		// blank the SD video encoder
+		anabel_video_set_reg(par, 0x6e, 0x40);
+		break;
 	case STD_NTSC:
 		// color burst config
 		anabel_video_set_reg(par, 0x28, 0x25);
@@ -269,22 +473,35 @@ static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
 static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
 {
     // setup QVCP clocks
+    // DDS reference: 27MHz
+    qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
     switch (par->std) {
+    case STD_FAKEHD:
+        // fake HD uses a 99MHz interface clock
+        qvcp_set_clock(par, clk_pll, 0x382c0308);
+        // fake HD pixel clock is half the interface clock because it uses
+        // 4:2:2 interface (49.5MHz pixel clock)
+        qvcp_set_clock(par, pix_clk, PNX8550_CM_QVCP_CLK_ENABLE
+                | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
+        // process layers at 58MHz. has to be faster than the pixel clock,
+        // so for fake HD mode it has to be ≥50MHz.
+        qvcp_set_clock(par, proc_clk, PNX8550_CM_QVCP_CLK_ENABLE
+                | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC58);
+        break;
     default:
         // SD mode requires 27MHz interface clock
         qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
-        qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
         // SD pixel clock is 13.5MHz (half the interface clock)
-        qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
-                | PNX8550_CM_QVCP_CLK_FCLOCK);
         qvcp_set_clock(par, pix_clk, PNX8550_CM_QVCP_CLK_ENABLE
                 | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
+        // process layers at 17MHz. slow but sufficient for SD.
+        qvcp_set_clock(par, proc_clk, PNX8550_CM_QVCP_CLK_ENABLE
+                | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17);
         break;
     }
-    // process layers at 17MHz. slow but absolutely sufficient with a
-    // single layer.
-    qvcp_set_clock(par, proc_clk, PNX8550_CM_QVCP_CLK_ENABLE
-			| PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17);
+    // enable interface clock
+    qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
+            | PNX8550_CM_QVCP_CLK_FCLOCK);
     // disable QVCP power-down mode
     qvcp_set_reg(par, PNX8550_DCSN_POWERDOWN_OFFSET, 0);
 
@@ -292,9 +509,20 @@ static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
 	// the clocks to the PNX8510 aren't yet available.
 	udelay(300);
 	
-	// make sure the clocks are enabled
-	anabel_clock_set_reg(par, 0x01, 0x00);
-	anabel_clock_set_reg(par, 0x02, 0x00);
+    // make sure the ANABEL clocks are enabled
+    anabel_clock_set_reg(par, 0x01, 0x00);
+    switch (par->std) {
+    case STD_FAKEHD:
+        // fake HD processing actually runs at 49.5MHz, so that the
+        // active video width doesn't spuriously double
+        anabel_clock_set_reg(par, 0x02, 0x02);
+        break;
+    default:
+        // SD processing runs at 27MHz, even though the pixel rate is
+        // actually just 13.5MHz
+        anabel_clock_set_reg(par, 0x02, 0x00);
+        break;
+    }
 	// power the PNX8510 DACs back up
 	anabel_video_set_reg(par, 0xa5, 0x30);
 
@@ -335,6 +563,26 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 {
     // setup screen geometry
     switch (par->std) {
+    case STD_FAKEHD:
+        qvcp_set_reg(par, 0x000, 0x06df0231);
+        qvcp_set_reg(par, 0x004, 0x05800080);
+        qvcp_set_reg(par, 0x008, 0x02300014);
+        qvcp_set_reg(par, 0x00c, 0x06c3001d);
+        qvcp_set_reg(par, 0x010, 0x02320005);
+        qvcp_set_reg(par, 0x014, 0x01400230);
+        qvcp_set_reg(par, 0x028, 0x00000000);
+        qvcp_set_reg(par, 0x02c, 0x00000000);
+        qvcp_set_reg(par, 0x230, 0x00800014);
+        qvcp_set_reg(par, 0x234, 0x021C0500);
+        // 720 lines in, 1080 lines out, ie. scale by 1.5 vertically.
+        // should probably be filtered instead; repeating causes artifacts
+        // due to interlacing.
+        qvcp_set_reg(par, 0x220, 0x0000aaaa);
+        // configure and enable timing generator
+        qvcp_set_reg(par, 0x020, 0x20050005);
+        // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
+        qvcp_set_reg(par, 0x03c, 0x0fe81400);
+        break;
     case STD_NTSC:
         qvcp_set_reg(par, 0x000, 0x03590105);
         qvcp_set_reg(par, 0x004, 0x02d00359);
@@ -346,6 +594,7 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
         qvcp_set_reg(par, 0x02c, 0x012F02DC);
         qvcp_set_reg(par, 0x230, 0x80000030);
         qvcp_set_reg(par, 0x234, 0x00F002d0);
+        qvcp_set_reg(par, 0x220, 0x0000ffff);
         // configure and enable timing generator
         qvcp_set_reg(par, 0x020, 0x20050005);
         // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
@@ -363,6 +612,7 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
         qvcp_set_reg(par, 0x02c, 0x012C02DC);
         qvcp_set_reg(par, 0x230, 0x80000030);
         qvcp_set_reg(par, 0x234, 0x012002d0);
+        qvcp_set_reg(par, 0x220, 0x0000ffff);
         // configure and enable timing generator
         qvcp_set_reg(par, 0x020, 0x20050005);
         // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
@@ -382,6 +632,16 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
     qvcp_set_reg(par, 0x01c, 0x800000);
     // set layer base address and size
     switch (par->std) {
+    case STD_FAKEHD:
+        qvcp_set_reg(par, 0x200, par->iobase + PNX8550FB_STRIDE);
+        qvcp_set_reg(par, 0x204, 2 * PNX8550FB_STRIDE);
+        qvcp_set_reg(par, 0x208, PNX8550FB_LINE_SIZE_FAKEHD);
+        qvcp_set_reg(par, 0x20c, par->iobase);
+        qvcp_set_reg(par, 0x210, 2 * PNX8550FB_STRIDE);
+        qvcp_set_reg(par, 0x214, 8);
+        qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH_FAKEHD);
+        qvcp_set_reg(par, 0x23c, 0x20);
+        break;
     default:
         qvcp_set_reg(par, 0x200, par->iobase);
         qvcp_set_reg(par, 0x204, 2 * PNX8550FB_STRIDE);
@@ -477,7 +737,19 @@ static int pnx8550fb_standard_set(const char *val,
 	if (n > 0 && val[n - 1] == '\n')
 		n--;
 
-	if (!strncasecmp(val, "pal", n)
+	if (!strncasecmp(val, "fakehd", n)) {
+		std = STD_FAKEHD;
+		def.yres_virtual = PNX8550FB_HEIGHT_FAKEHD;
+		def.xres_virtual = PNX8550FB_WIDTH_FAKEHD;
+		def.upper_margin = 0;
+		def.lower_margin = 0;
+		def.left_margin = 0;
+		def.right_margin = 0;
+		def.vsync_len = PNX8550FB_VSYNC_FAKEHD;
+		def.hsync_len = PNX8550FB_HSYNC_FAKEHD;
+		def.pixclock = PNX8550FB_PIXCLOCK_FAKEHD;
+		def.vmode = FB_VMODE_INTERLACED;
+	} else if (!strncasecmp(val, "pal", n)
 			|| !strncasecmp(val, "default", n)) {
 		std = STD_PAL;
 		def.yres_virtual = PNX8550FB_HEIGHT_PAL;
@@ -521,6 +793,9 @@ static int pnx8550fb_standard_get(char *buffer,
 	case STD_PAL:
 		strcpy(buffer, "pal");
 		break;
+	case STD_FAKEHD:
+		strcpy(buffer, "fakehd");
+		break;
 	default:
 		sprintf(buffer, "%d", std);
 		break;
@@ -534,7 +809,7 @@ static struct kernel_param_ops pnx8550fb_standard_ops = {
 };
 
 module_param_cb(standard, &pnx8550fb_standard_ops, &std, 0644);
-MODULE_PARM_DESC(standard, "video standard: PAL, NTSC. use fbset to apply!");
+MODULE_PARM_DESC(standard, "video standard: PAL, NTSC, fakeHD. use fbset to apply!");
 
 /* Dummy palette to make fbcon work. */
 static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_int blue,
@@ -747,6 +1022,9 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	case STD_NTSC:
 		standard = "NTSC";
 		break;
+	case STD_FAKEHD:
+		standard = "fake HD";
+		break;
 	default:
 		standard = "unknown";
 		break;
@@ -810,6 +1088,9 @@ static int __init pnx8550_framebuffer_init(void)
 		} else if (!strncasecmp(option, "pal", 3)) {
 			pnx8550fb_standard_set("pal", NULL);
 			option += 3;
+		} else if (!strncasecmp(option, "fakehd", 6)) {
+			pnx8550fb_standard_set("fakehd", NULL);
+			option += 6;
 		} else if (std == STD_UNDEFINED)
 			// pick default standard only if none selected by module param
 			pnx8550fb_standard_set("default", NULL);
