@@ -30,6 +30,7 @@
 #include <i2c.h>
 #include <dcsn.h>
 #include <cm.h>
+#include <ak4705.h>
 
 static struct i2c_client *ak4705;
 
@@ -58,25 +59,41 @@ static int ak4705_set_reg(unsigned char reg, unsigned char value)
 }
 
 // suspends AK4705, ie. disables all video outputs
-void ak4705_suspend(void)
+void ak4705_set_mode(int mode)
 {
-	// de-assert slow & fast blanking on the SCART ports
-	ak4705_set_reg(0x07, 0x80);
-	// set video outputs to Hi-Z
-	ak4705_set_reg(0x04, 0xC0);
+	switch (mode) {
+	case AK4705_SUSPEND:
+		// de-assert slow & fast blanking on the SCART ports
+		ak4705_set_reg(0x07, 0x80);
+		// set video outputs to Hi-Z
+		ak4705_set_reg(0x04, 0xC0);
+		// video output enable: all disabled
+		ak4705_set_reg(0x05, 0x00);
+		break;
+	case AK4705_CVBS_RGB:
+		// video routing: TV SCART = encoder CVBS + RGB, VCR SCART = encoder
+		//     CVBS, composite = encoder CVBS
+		ak4705_set_reg(0x04, 0x09);
+		// blanking: TV FB = +4V, TV SB = output +12V, VCR SB = input
+		ak4705_set_reg(0x07, 0x8D);
+		// video output enable: TV CVBS, R, G, B, FB = enabled, VCR CVBS =
+		//     enabled, VCR C = disabled
+		ak4705_set_reg(0x05, 0x5F);
+		break;
+	case AK4705_YUV:
+		// de-assert slow & fast blanking on the SCART ports. there is a
+		//     signal on the connector but SCART blanking is meaningless
+		//     for HD YUV.
+		ak4705_set_reg(0x07, 0x80);
+		// video routing: TV SCART = CVBS + YUV, VCR SCART = shutdown,
+		//     composite = shutdown
+		ak4705_set_reg(0x04, 0xc1);
+		// video output enable: TV R, G, B = enabled, VCR CVBS = disabled,
+		//     TV CVBS, FB = disabled, VCR C = disabled
+		ak4705_set_reg(0x05, 0x0E);
+		break;
+	}
 }
-EXPORT_SYMBOL(ak4705_suspend);
-
-// resumes AK4705, ie. enables all video outputs
-void ak4705_resume(void)
-{
-    // video routing: TV SCART = encoder CVBS + RGB, VCR SCART = encoder
-    //     CVBS, composite = encoder CVBS
-    ak4705_set_reg(0x04, 0x09);
-    // blanking: TV FB = +4V, TV SB = output +12V, VCR SB = input
-    ak4705_set_reg(0x07, 0x8D);
-}
-EXPORT_SYMBOL(ak4705_resume);
 
 // configures AK4705 to output RGB + CVBS on all outputs
 static void ak4705_setup(void)
@@ -93,9 +110,6 @@ static void ak4705_setup(void)
     // audio config: main volume transition = 2048ck, DAC volume = ±0dB,
     //     VCR SCART audio = stereo
     ak4705_set_reg(0x03, 0x27);
-    // video output enable: TV CVBS, R, G, B, FB = enabled, VCR CVBS =
-    //     enabled, VCR C = disabled
-    ak4705_set_reg(0x05, 0x5F);
     // video gain: RGB gain +6dB, DC restore = encoder CVBS, VCR clamp =
     //     Y/C, encoder clamp = RGB
     ak4705_set_reg(0x06, 0x04); 
@@ -105,7 +119,7 @@ static void ak4705_setup(void)
     // configure routing for suspended operation. this leaves the
     // display off until the framebuffer driver explicitly enables it,
     // avoiding flicker.
-    ak4705_suspend();
+    ak4705_set_mode(AK4705_SUSPEND);
 }
 
 // places the AK4705 back into auto-startup standby mode, ie. bypassing

@@ -441,7 +441,7 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
 {
 	// suspend SCART switch disabling video output
-	ak4705_suspend();
+	ak4705_set_mode(AK4705_SUSPEND);
 
 	// make sure the layer is disabled, to guard against any possibility
 	// that stopping the clocks might hang the DMA engine.
@@ -529,7 +529,14 @@ static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
 	// layer must be re-enabled separately if desired
 
 	// resume SCART switch as well
-	ak4705_resume();
+	switch (par->std) {
+	case STD_FAKEHD:
+		ak4705_set_mode(AK4705_YUV);
+		break;
+	default:
+		ak4705_set_mode(AK4705_CVBS_RGB);
+		break;
+	}
 }
 
 static int pnx8550fb_hw_is_suspended(struct pnx8550fb_par *par)
