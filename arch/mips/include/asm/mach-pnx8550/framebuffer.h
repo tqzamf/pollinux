@@ -19,14 +19,20 @@
 #define PNX8550FB_HEIGHT_FAKEHD  720
 #define PNX8550FB_WIDTH_SD       720
 #define PNX8550FB_WIDTH_FAKEHD   1280
-// these borders are nonsense for both PAL and NTSC, but provide a
-// centered initial display
-#define PNX8550FB_MARGIN_UPPER_PAL  32
-#define PNX8550FB_MARGIN_LOWER_PAL  32
-#define PNX8550FB_MARGIN_UPPER_NTSC 24
-#define PNX8550FB_MARGIN_LOWER_NTSC 24
-#define PNX8550FB_MARGIN_LEFT_SD    40
-#define PNX8550FB_MARGIN_RIGHT_SD   40
+// some underscan so that all of the screen is visible. for SD, underscan
+// is >10% because analog TVs can underscan considerably. for fake HD, the
+// TV shouldn't underscan at all, but some do it anyway. leave a 5% border
+// just in case.
+#define PNX8550FB_MARGIN_UPPER_PAL    32
+#define PNX8550FB_MARGIN_LOWER_PAL    32
+#define PNX8550FB_MARGIN_UPPER_NTSC   24
+#define PNX8550FB_MARGIN_LOWER_NTSC   24
+#define PNX8550FB_MARGIN_UPPER_FAKEHD 18
+#define PNX8550FB_MARGIN_LOWER_FAKEHD 18
+#define PNX8550FB_MARGIN_LEFT_SD      40
+#define PNX8550FB_MARGIN_RIGHT_SD     40
+#define PNX8550FB_MARGIN_LEFT_FAKEHD  32
+#define PNX8550FB_MARGIN_RIGHT_FAKEHD 32
 #define PNX8550FB_STRIDE         (PNX8550FB_WIDTH_FAKEHD * sizeof(int))
 #define PNX8550FB_HSYNC_PAL      144
 #define PNX8550FB_VSYNC_PAL      49

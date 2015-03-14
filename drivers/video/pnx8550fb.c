@@ -748,10 +748,10 @@ static int pnx8550fb_standard_set(const char *val,
 		std = STD_FAKEHD;
 		def.yres_virtual = PNX8550FB_HEIGHT_FAKEHD;
 		def.xres_virtual = PNX8550FB_WIDTH_FAKEHD;
-		def.upper_margin = 0;
-		def.lower_margin = 0;
-		def.left_margin = 0;
-		def.right_margin = 0;
+		def.upper_margin = PNX8550FB_MARGIN_UPPER_FAKEHD;
+		def.lower_margin = PNX8550FB_MARGIN_LOWER_FAKEHD;
+		def.left_margin = PNX8550FB_MARGIN_LEFT_FAKEHD;
+		def.right_margin = PNX8550FB_MARGIN_RIGHT_FAKEHD;
 		def.vsync_len = PNX8550FB_VSYNC_FAKEHD;
 		def.hsync_len = PNX8550FB_HSYNC_FAKEHD;
 		def.pixclock = PNX8550FB_PIXCLOCK_FAKEHD;
