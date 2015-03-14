@@ -62,8 +62,25 @@ struct pnx8550fb_par {
 	int right;
 	int upper;
 	int lower;
+	dma_addr_t filterlayer;
 };
 
+// filter layer width in pixels
+#define PNX8550FB_FILTERLAYER_WIDTH 2
+// filter layer width in bytes; has to be a multiple of 8.
+#define PNX8550FB_FILTERLAYER_STRIDE \
+	(PNX8550FB_FILTERLAYER_WIDTH * sizeof(uint32_t))
+static uint32_t pnx8550fb_filterlayer[1080 * PNX8550FB_FILTERLAYER_WIDTH]
+		__aligned(8) = {
+#define _LINE(x) (x) << 24, (x) << 24,
+#define _BLOCK _LINE(0) _LINE(127) _LINE(255) _LINE(255) _LINE(127) _LINE(0)
+	// 180 6-line blocks for 1080 lines total
+#define _5BLOCKS _BLOCK _BLOCK _BLOCK _BLOCK _BLOCK
+#define _20BLOCKS _5BLOCKS _5BLOCKS _5BLOCKS _5BLOCKS
+	_20BLOCKS _20BLOCKS _20BLOCKS
+	_20BLOCKS _20BLOCKS _20BLOCKS
+	_20BLOCKS _20BLOCKS _20BLOCKS
+};
 // sets a single register over I²C
 static void i2c_set_reg(struct i2c_adapter *bus, unsigned char addr,
 		unsigned char reg, unsigned char value)
@@ -438,6 +455,30 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 	}
 }
 
+static void pnx8550fb_set_layers_enabled(struct pnx8550fb_par *par,
+		bool enabled)
+{
+	int layer;
+	
+	if (!enabled) {
+		// disable all implemented layers, just in case.
+		for (layer = qvcp_get_reg(par, 0x018) & 7; layer > 0; layer--)
+			qvcp_set_reg(par, 0x040 + (layer << 9), 0x00);
+	} else {
+		// only enable the layers that are actually used.
+		switch (par->std) {
+		case STD_FAKEHD:
+			qvcp_set_reg(par, 0x240, 0x01);
+			qvcp_set_reg(par, 0x440, 0x01);
+			qvcp_set_reg(par, 0x640, 0x01);
+			break;
+		default:
+			qvcp_set_reg(par, 0x240, 0x01);
+			break;
+		}
+	}
+}
+
 static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
 {
 	// suspend SCART switch disabling video output
@@ -445,7 +486,7 @@ static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
 
 	// make sure the layer is disabled, to guard against any possibility
 	// that stopping the clocks might hang the DMA engine.
-	qvcp_set_reg(par, 0x240, 0x00);
+	pnx8550fb_set_layers_enabled(par, false);
 
 	// power down the PNX8510 DACs
 	anabel_video_set_reg(par, 0xa5, 0x31);
@@ -513,13 +554,13 @@ static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
     anabel_clock_set_reg(par, 0x01, 0x00);
     switch (par->std) {
     case STD_FAKEHD:
-        // fake HD processing actually runs at 49.5MHz, so that the
-        // active video width doesn't spuriously double
+        // fake HD processing actually runs at 49.5MHz, half the interface
+        // clock.
         anabel_clock_set_reg(par, 0x02, 0x02);
         break;
     default:
         // SD processing runs at 27MHz, even though the pixel rate is
-        // actually just 13.5MHz
+        // actually just 13.5MHz.
         anabel_clock_set_reg(par, 0x02, 0x00);
         break;
     }
@@ -554,131 +595,199 @@ void pnx8550fb_set_blanking(struct pnx8550fb_par *par, int blank)
 		pnx8550fb_hw_resume(par);
 
     if (blank == FB_BLANK_UNBLANK)
-		// re-enable the layer
-		qvcp_set_reg(par, 0x240, 0x01);
+		// re-enable all required layers
+		pnx8550fb_set_layers_enabled(par, true);
 	else
-		// disable the layer, blanking the screen
-		qvcp_set_reg(par, 0x240, 0x00);
+		// disable all layers, blanking the screen
+		pnx8550fb_set_layers_enabled(par, false);
 
 	if (blank > FB_BLANK_NORMAL && !pnx8550fb_hw_is_suspended(par))
 		// switching into powerdown. suspend the display hardware.
 		pnx8550fb_hw_suspend(par);
 }
 
-// sets up QVCP 1 for PAL/NTSC
+// sets sensible defaults for the given layer
+static void pnx8550fb_init_layer(struct pnx8550fb_par *par, int layer)
+{
+	uint32_t base = layer << 9;
+	// disable chroma keying
+	qvcp_set_reg(par, base + 0x05c, 0x0);
+	qvcp_set_reg(par, base + 0x06c, 0x0);
+	qvcp_set_reg(par, base + 0x07c, 0x0);
+	qvcp_set_reg(par, base + 0x08c, 0x0);
+	// color mode = ARGB 8888
+	qvcp_set_reg(par, base + 0x038, 0x0);
+	qvcp_set_reg(par, base + 0x0bc, 0xec);
+	qvcp_set_reg(par, base + 0x0c4, 0xffe7eff7);
+	// brightness / contrast / gamma
+	qvcp_set_reg(par, base + 0x0cc, 0x100f100);
+	// disable alpha blending by default (actually enables it and uses a
+	// constant alpha that is fully opaque) and use default ROPs
+	qvcp_set_reg(par, base + 0x0b8, 0xff0e00);
+	qvcp_set_reg(par, base + 0x094, 0x00000000);
+	qvcp_set_reg(par, base + 0x098, 0xffff0000);
+	qvcp_set_reg(par, base + 0x09c, 0x00000000);
+	// color space matrix coefficients RGB → YUV
+	qvcp_set_reg(par, base + 0x0d0, 0x004d0096);
+	qvcp_set_reg(par, base + 0x0d4, 0x001d07da);
+	qvcp_set_reg(par, base + 0x0d8, 0x07b60070);
+	qvcp_set_reg(par, base + 0x0dc, 0x009d077c);
+	qvcp_set_reg(par, base + 0x0e0, 0x07e60100);
+	// disable horizontal and vertical scaling
+	qvcp_set_reg(par, base + 0x014, 8);
+	qvcp_set_reg(par, base + 0x0a8, 0x00000000);
+	qvcp_set_reg(par, base + 0x020, 0x0000ffff);
+}
+
+// sets up QVCP 1 for PAL / NTSC / fake HD
 static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 {
-    // setup screen geometry
-    switch (par->std) {
-    case STD_FAKEHD:
-        qvcp_set_reg(par, 0x000, 0x06df0231);
-        qvcp_set_reg(par, 0x004, 0x05800080);
-        qvcp_set_reg(par, 0x008, 0x02300014);
-        qvcp_set_reg(par, 0x00c, 0x06c3001d);
-        qvcp_set_reg(par, 0x010, 0x02320005);
-        qvcp_set_reg(par, 0x014, 0x01400230);
-        qvcp_set_reg(par, 0x028, 0x00000000);
-        qvcp_set_reg(par, 0x02c, 0x00000000);
-        qvcp_set_reg(par, 0x230, 0x00800014);
-        qvcp_set_reg(par, 0x234, 0x021C0500);
-        // 720 lines in, 1080 lines out, ie. scale by 1.5 vertically.
-        // should probably be filtered instead; repeating causes artifacts
-        // due to interlacing.
-        qvcp_set_reg(par, 0x220, 0x0000aaaa);
-        // configure and enable timing generator
-        qvcp_set_reg(par, 0x020, 0x20050005);
-        // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
-        qvcp_set_reg(par, 0x03c, 0x0fe81400);
-        break;
-    case STD_NTSC:
-        qvcp_set_reg(par, 0x000, 0x03590105);
-        qvcp_set_reg(par, 0x004, 0x02d00359);
-        qvcp_set_reg(par, 0x008, 0x01070012);
-        qvcp_set_reg(par, 0x00c, 0x02dd034a);
-        qvcp_set_reg(par, 0x010, 0x0004000b);
-        qvcp_set_reg(par, 0x014, 0x00950105);
-        qvcp_set_reg(par, 0x028, 0x013002DD);
-        qvcp_set_reg(par, 0x02c, 0x012F02DC);
-        qvcp_set_reg(par, 0x230, 0x80000030);
-        qvcp_set_reg(par, 0x234, 0x00F002d0);
-        qvcp_set_reg(par, 0x220, 0x0000ffff);
-        // configure and enable timing generator
-        qvcp_set_reg(par, 0x020, 0x20050005);
-        // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
-        qvcp_set_reg(par, 0x03c, 0x0fe81400);
-        break;
-    default: // default is PAL
-    case STD_PAL:
-        qvcp_set_reg(par, 0x000, 0x035f0137);
-        qvcp_set_reg(par, 0x004, 0x02d0035f);
-        qvcp_set_reg(par, 0x008, 0x01390016);
-        qvcp_set_reg(par, 0x00c, 0x02dd0350);
-        qvcp_set_reg(par, 0x010, 0x0001000b);
-        qvcp_set_reg(par, 0x014, 0x00AF0137);
-        qvcp_set_reg(par, 0x028, 0x012D02DD);
-        qvcp_set_reg(par, 0x02c, 0x012C02DC);
-        qvcp_set_reg(par, 0x230, 0x80000030);
-        qvcp_set_reg(par, 0x234, 0x012002d0);
-        qvcp_set_reg(par, 0x220, 0x0000ffff);
-        // configure and enable timing generator
-        qvcp_set_reg(par, 0x020, 0x20050005);
-        // configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
-        qvcp_set_reg(par, 0x03c, 0x0fe81400);
-        break;
-    }
-    // disable VBI generation
-    qvcp_set_reg(par, 0x034, 0x00000000);
-    qvcp_set_reg(par, 0x038, 0x00000000);
-    // pedestals off
-    qvcp_set_reg(par, 0x05c, 0x0);
-    qvcp_set_reg(par, 0x060, 0x0);
-    // gamma correction on, noise shaping (dithering) for 10 bits
-    qvcp_set_reg(par, 0x074, 0xC03F3F3F);
-    qvcp_set_reg(par, 0x070, 0x00150015);
-    // set default background color: black
-    qvcp_set_reg(par, 0x01c, 0x800000);
-    // set layer base address and size
-    switch (par->std) {
-    case STD_FAKEHD:
-        qvcp_set_reg(par, 0x200, par->iobase + PNX8550FB_STRIDE);
-        qvcp_set_reg(par, 0x204, 2 * PNX8550FB_STRIDE);
-        qvcp_set_reg(par, 0x208, PNX8550FB_LINE_SIZE_FAKEHD);
-        qvcp_set_reg(par, 0x20c, par->iobase);
-        qvcp_set_reg(par, 0x210, 2 * PNX8550FB_STRIDE);
-        qvcp_set_reg(par, 0x214, 8);
-        qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH_FAKEHD);
-        qvcp_set_reg(par, 0x23c, 0x20);
-        break;
-    default:
-        qvcp_set_reg(par, 0x200, par->iobase);
-        qvcp_set_reg(par, 0x204, 2 * PNX8550FB_STRIDE);
-        qvcp_set_reg(par, 0x208, PNX8550FB_LINE_SIZE_SD);
-        qvcp_set_reg(par, 0x20c, par->iobase + PNX8550FB_STRIDE);
-        qvcp_set_reg(par, 0x210, 2 * PNX8550FB_STRIDE);
-        qvcp_set_reg(par, 0x214, 8);
-        qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH_SD);
-        qvcp_set_reg(par, 0x23c, 0x20);
-    }
-    // disable chroma keying
-    qvcp_set_reg(par, 0x25c, 0x0);
-    qvcp_set_reg(par, 0x26c, 0x0);
-    qvcp_set_reg(par, 0x27c, 0x0);
-    qvcp_set_reg(par, 0x28c, 0x0);
-    // color mode = ARGB 8888
-    qvcp_set_reg(par, 0x238, 0x0);
-    qvcp_set_reg(par, 0x2bc, 0xec);
-    qvcp_set_reg(par, 0x2c4, 0xffe7eff7);
-    // brightness / contrast / gamma
-    qvcp_set_reg(par, 0x2b8, 0xe00);
-    qvcp_set_reg(par, 0x2cc, 0x100f100);
-    // matrix coefficients
-    qvcp_set_reg(par, 0x2d0, 0x004d0096);
-    qvcp_set_reg(par, 0x2d4, 0x001d07da);
-    qvcp_set_reg(par, 0x2d8, 0x07b60070);
-    qvcp_set_reg(par, 0x2dc, 0x009d077c);
-    qvcp_set_reg(par, 0x2e0, 0x07e60100);
-	// enable the layer
-    qvcp_set_reg(par, 0x240, 0x1);
+	int layer;
+	
+	// disable all layers during init
+	pnx8550fb_set_layers_enabled(par, false);
+
+	// setup screen geometry in timing generator
+	switch (par->std) {
+	case STD_FAKEHD:
+		qvcp_set_reg(par, 0x000, 0x06df0231);
+		qvcp_set_reg(par, 0x004, 0x05800080);
+		qvcp_set_reg(par, 0x008, 0x02300014);
+		qvcp_set_reg(par, 0x00c, 0x06c3001d);
+		qvcp_set_reg(par, 0x010, 0x02320005);
+		qvcp_set_reg(par, 0x014, 0x01400230);
+		qvcp_set_reg(par, 0x028, 0x00000000);
+		qvcp_set_reg(par, 0x02c, 0x00000000);
+		break;
+	case STD_NTSC:
+		qvcp_set_reg(par, 0x000, 0x03590105);
+		qvcp_set_reg(par, 0x004, 0x02d00359);
+		qvcp_set_reg(par, 0x008, 0x01070012);
+		qvcp_set_reg(par, 0x00c, 0x02dd034a);
+		qvcp_set_reg(par, 0x010, 0x0004000b);
+		qvcp_set_reg(par, 0x014, 0x00950105);
+		qvcp_set_reg(par, 0x028, 0x013002DD);
+		qvcp_set_reg(par, 0x02c, 0x012F02DC);
+		break;
+	default: // default is PAL
+	case STD_PAL:
+		qvcp_set_reg(par, 0x000, 0x035f0137);
+		qvcp_set_reg(par, 0x004, 0x02d0035f);
+		qvcp_set_reg(par, 0x008, 0x01390016);
+		qvcp_set_reg(par, 0x00c, 0x02dd0350);
+		qvcp_set_reg(par, 0x010, 0x0001000b);
+		qvcp_set_reg(par, 0x014, 0x00AF0137);
+		qvcp_set_reg(par, 0x028, 0x012D02DD);
+		qvcp_set_reg(par, 0x02c, 0x012C02DC);
+		break;
+	}
+
+	// disable VBI generation
+	qvcp_set_reg(par, 0x034, 0x00000000);
+	qvcp_set_reg(par, 0x038, 0x00000000);
+	// pedestals off
+	qvcp_set_reg(par, 0x05c, 0x0);
+	qvcp_set_reg(par, 0x060, 0x0);
+	// gamma correction on, noise shaping (dithering) for 10 bits
+	qvcp_set_reg(par, 0x070, 0x00150015);
+	qvcp_set_reg(par, 0x074, 0xC03F3F3F);
+	// set default background color: black
+	qvcp_set_reg(par, 0x01c, 0x800000);
+	// initialize all implemented layers to sensible defaults
+	for (layer = qvcp_get_reg(par, 0x018) & 7; layer > 0; layer--)
+		pnx8550fb_init_layer(par, layer);
+
+	// configure output mode and enable output interface. this produces a
+	// blank screen until the layers are enabled.
+	switch (par->std) {
+	default:
+		// interlaced mode, output unblanked
+		qvcp_set_reg(par, 0x020, 0x20050005);
+		// configure for 10-bit YUV 4:2:2 D1 interface, 2x oversample
+		qvcp_set_reg(par, 0x03c, 0x0fe81444);
+		break;
+	}
+
+	// configure layer timings for selected standard
+	switch (par->std) {
+	case STD_FAKEHD:
+		// primary display layer
+		qvcp_set_reg(par, 0x230, 0x00800014);
+		qvcp_set_reg(par, 0x234, 0x021C0500);
+		// 720 lines in, 1080 lines out, ie. scale by 1.5 vertically.
+		qvcp_set_reg(par, 0x220, 0x0000aaaa);
+		qvcp_set_reg(par, 0x23c, 0x20);
+		// filtering layer; width is really just 2 pixels
+		qvcp_set_reg(par, 0x430, 0x00800014);
+		qvcp_set_reg(par, 0x434, 0x021c0002);
+		qvcp_set_reg(par, 0x43c, 0x20);
+		// secondary display layer. starts 1 line furter up, so it has to
+		// start in "the other" field, and also inherits alpha from the
+		// filter layer below.
+		qvcp_set_reg(par, 0x630, 0x80800027);
+		qvcp_set_reg(par, 0x634, 0x021c0500);
+		qvcp_set_reg(par, 0x620, 0x0000aaaa);
+		qvcp_set_reg(par, 0x63c, 0x34);
+		break;
+	case STD_NTSC:
+		qvcp_set_reg(par, 0x230, 0x80000030);
+		qvcp_set_reg(par, 0x234, 0x00F002d0);
+		qvcp_set_reg(par, 0x23c, 0x20);
+		break;
+	default: // default is PAL
+	case STD_PAL:
+		qvcp_set_reg(par, 0x230, 0x80000030);
+		qvcp_set_reg(par, 0x234, 0x012002d0);
+		qvcp_set_reg(par, 0x23c, 0x20);
+		break;
+	}
+	
+	// set layer base address(es) and size(s)
+	switch (par->std) {
+	case STD_FAKEHD:
+		// primary video layer
+		qvcp_set_reg(par, 0x200, par->iobase + PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x20c, par->iobase);
+		qvcp_set_reg(par, 0x204, 2 * PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x210, 2 * PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x208, PNX8550FB_LINE_SIZE_FAKEHD);
+		qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH_FAKEHD);
+		// filtering pseudo-layer, scaled horizontally to match screen width
+		qvcp_set_reg(par, 0x4a8, 0x00000000);
+		qvcp_set_reg(par, 0x400, par->filterlayer + PNX8550FB_FILTERLAYER_STRIDE);
+		qvcp_set_reg(par, 0x40c, par->filterlayer);
+		qvcp_set_reg(par, 0x404, 2 * PNX8550FB_FILTERLAYER_STRIDE);
+		qvcp_set_reg(par, 0x410, 2 * PNX8550FB_FILTERLAYER_STRIDE);
+		qvcp_set_reg(par, 0x408, PNX8550FB_FILTERLAYER_STRIDE);
+		qvcp_set_reg(par, 0x4b4, PNX8550FB_WIDTH_FAKEHD);
+		// generate per-pixel alpha, but don't apply it to this layer. this
+		// avoids painting black over primary video layer lines that should
+		// be 50% blended with the secondary video layer.
+		qvcp_set_reg(par, 0x4b8, 0x008e00);
+		qvcp_set_reg(par, 0x494, 0x0000ffff);
+		qvcp_set_reg(par, 0x498, 0x00000000);
+		// secondary video layer. alpha actually comes from the filter layer
+		// below it.
+		qvcp_set_reg(par, 0x600, par->iobase);
+		qvcp_set_reg(par, 0x60c, par->iobase + PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x604, 2 * PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x610, 2 * PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x608, PNX8550FB_LINE_SIZE_FAKEHD);
+		qvcp_set_reg(par, 0x6b4, PNX8550FB_WIDTH_FAKEHD);
+		qvcp_set_reg(par, 0x6b8, 0x008e00);
+		break;
+	default:
+		qvcp_set_reg(par, 0x200, par->iobase);
+		qvcp_set_reg(par, 0x20c, par->iobase + PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x204, 2 * PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x210, 2 * PNX8550FB_STRIDE);
+		qvcp_set_reg(par, 0x208, PNX8550FB_LINE_SIZE_SD);
+		qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH_SD);
+		break;
+	}
+
+	// enable the layers, unblanking the screen
+	pnx8550fb_set_layers_enabled(par, true);
 }
 
 // shuts down the QVCP and powers it down
@@ -725,7 +834,6 @@ static struct fb_var_screeninfo def = {
 	.red =            { 16, 8, 0 },
 	.green =          { 8,  8, 0 },
 	.blue =           { 0,  8, 0 },
-	.transp =         { 30, 1, 0 },
 	.activate =       FB_ACTIVATE_NOW,
 	.height =         -1,
 	.width =          -1,
@@ -979,6 +1087,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	}
 	par = info->par;
 	par->base = NULL;
+	par->filterlayer = 0;
 
 	fb_ptr = dma_alloc_noncoherent(&dev->dev, PNX8550FB_SIZE,
 					&fb_base, GFP_USER);
@@ -990,7 +1099,15 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	par->iobase = fb_base;
 	par->base = fb_ptr;
 	par->size = PNX8550FB_SIZE;
-	par->std = def.yres_virtual == PNX8550FB_HEIGHT_NTSC ? STD_NTSC : STD_PAL;
+	par->std = STD_UNDEFINED;
+	
+	par->filterlayer = dma_map_single(&dev->dev, pnx8550fb_filterlayer,
+			sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
+	if (dma_mapping_error(&dev->dev, par->filterlayer)) {
+		printk(KERN_ERR "pnx8550fb failed to map fake HD filter layer\n");
+		pnx8550_framebuffer_remove(dev);
+		return 1;
+	}
 	// hardware setup. should probably be defined in the platform_device
 	// instead of being hardcoded.
 	par->mmio = (void *) PNX8550FB_QVCP1_BASE;
@@ -1009,7 +1126,8 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	info->pseudo_palette = info->par + sizeof(struct pnx8550fb_par);
 	info->flags = FBINFO_FLAG_DEFAULT;
 
-	// set initial screen size
+	// set initial screen size. because the standard changes, this enables
+	// the display as a side effect.
 	pnx8550fb_check_var(&info->var, info);
 	pnx8550fb_resize(info, 1);
 
@@ -1020,8 +1138,6 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 		return 1;
 	}
 
-	// only enable display once the driver is already registered
-	pnx8550fb_setup_display(par);
 	switch (par->std) {
 	case STD_PAL:
 		standard = "PAL";
@@ -1062,6 +1178,10 @@ static int pnx8550_framebuffer_remove(struct platform_device *dev)
 		if (par->base)
 			dma_free_noncoherent(&dev->dev, PNX8550FB_SIZE,
 					par->base, GFP_USER);
+		if (par->filterlayer)
+			dma_unmap_single(&dev->dev, par->filterlayer,
+				sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
+
 
 		unregister_framebuffer(info);
 		framebuffer_release(info);
