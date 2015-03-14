@@ -253,13 +253,13 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 		anabel_video_set_reg(par, 0x85, 0x00);
 		anabel_video_set_reg(par, 0x86, 0x03);
 		anabel_video_set_reg(par, 0x86, 0x04);
-		// line type 5: blank: hsync, blank
+		// line type 5: blank: hsync, blank!
 		anabel_video_set_reg(par, 0x83, 0x21);
 		anabel_video_set_reg(par, 0x84, 0x00);
 		anabel_video_set_reg(par, 0x85, 0x00);
 		anabel_video_set_reg(par, 0x86, 0x04);
 		anabel_video_set_reg(par, 0x86, 0x05);
-		// line type 6: video: hsync, video!
+		// line type 6: video: hsync, video
 		anabel_video_set_reg(par, 0x83, 0x29);
 		anabel_video_set_reg(par, 0x84, 0x00);
 		anabel_video_set_reg(par, 0x85, 0x00);
@@ -332,14 +332,14 @@ static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
 		anabel_video_set_reg(par, 0x9b, 0x7f);
 		anabel_video_set_reg(par, 0x9c, 0x02);
 		anabel_video_set_reg(par, 0x9d, 0x20);
-		// screen size: 1760x1125 !0x0
+		// screen size: 1760x1125 !4x7
 		anabel_video_set_reg(par, 0xae, 0x64);
 		anabel_video_set_reg(par, 0xaf, 0x04);
 		anabel_video_set_reg(par, 0xb0, 0xdf);
 		anabel_video_set_reg(par, 0xb1, 0x06);
-		anabel_video_set_reg(par, 0xb2, 0x00);
+		anabel_video_set_reg(par, 0xb2, 0x07);
 		anabel_video_set_reg(par, 0xb3, 0x00);
-		anabel_video_set_reg(par, 0xb4, 0x00);
+		anabel_video_set_reg(par, 0xb4, 0x04);
 		anabel_video_set_reg(par, 0xb5, 0x00);
 		// blank offsets + gain for Y/U/V
 		anabel_video_set_reg(par, 0xc7, 0x80);
