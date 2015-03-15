@@ -52,6 +52,7 @@ Project include files:
 #include <asm/uaccess.h>
 #include <asm/mach-pnx8550/int.h>
 #include <asm/mach-pnx8550/i2c.h>
+#include <asm/mach-pnx8550/cm.h>
 #include <asm/io.h>
 
 #ifndef FALSE
@@ -83,7 +84,7 @@ Project include files:
 #define IP3203_UNIT0                0xBBE45000
 #define IP3203_UNIT1                0xBBE46000
 
-#define MODULE_CLOCK                27000 /* I2C module clock speed in KHz */
+#define MODULE_CLOCK                24000 /* I2C module clock speed in KHz */
 
 #define I2CADDRESS( address )       ((address) & 0x00FE) /* only 7 bits I2C address implemented */
 #define TIMER_OFF                   0
@@ -1079,7 +1080,7 @@ static void ip3203_init(struct i2c_adapter * i2c_adap, int device)
 
         DISABLE_I2C_CONTROLLER( busptr ); /* Disable I2C controller */
 
-        calc_speed_values ( TMHW_I2C_MAX_SS_SPEED, TMHW_I2C_MAX_SS_SPEED, &fsbir, &hsbir );
+        calc_speed_values ( TMHW_I2C_MAX_FS_SPEED, TMHW_I2C_MAX_FS_SPEED, &fsbir, &hsbir );
         WRITE_IP3203_FSBIR( busptr, fsbir);
         WRITE_IP3203_HSBIR( busptr, hsbir);
 
@@ -1447,6 +1448,11 @@ static struct i2c_adapter * ip3203_ops[NR_I2C_DEVICES] = { &ip3203_ops_0, &ip320
 int __init i2c_algo_ip3203_init (void)
 {
     int device;
+    
+    // make sure clock is enabled. timings are wrong if it isn't configured
+    // for 24MHz functional clock.
+    PNX8550_CM_I2C_HP_CTL = PNX8550_CM_CLK_ENABLE | PNX8550_CM_CLK_FCLOCK;
+    
     printk(/* KERN_INFO,*/ "i2c-ip3203: I2C IP3203 algorithm module\n");
     for (device = 0; device < NR_I2C_DEVICES; device++)
     {

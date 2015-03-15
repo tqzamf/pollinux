@@ -50,6 +50,7 @@ Project include files:
 #include <asm/uaccess.h>
 #include <asm/mach-pnx8550/int.h>
 #include <asm/mach-pnx8550/i2c.h>
+#include <asm/mach-pnx8550/cm.h>
 
 #ifndef FALSE
 #define FALSE 0
@@ -81,7 +82,7 @@ Project include files:
 #define IP0105_UNIT0                0xBBE69000
 #define IP0105_UNIT1                0xBBE4C000
 
-#define MODULE_CLOCK                27000 /* I2C module clock speed in KHz */
+#define MODULE_CLOCK                24000 /* I2C module clock speed in KHz */
 
 #define I2CADDRESS( address )       ((address) & 0x00FE) /* only 7 bits I2C address implemented */
 #define TIMER_OFF                   0
@@ -183,7 +184,7 @@ static const int i2c_debug = 7;
 #define ASSERT(x) if (!(x)) dev_dbg(&i2c_adap->dev, "ASSERTION FAILED at line %d in file %s\n", __LINE__, __FILE__);
 /* Types and defines: */
 
-#define TIMEOUT     200 /* Should be wait period of >100us i.e 1 byte @100KHz */
+#define TIMEOUT     800 /* Should be wait period of >100us i.e 1 byte @100KHz */
 
 
 static __inline void SETSPEED100(struct I2cBusObject * a)
@@ -191,7 +192,7 @@ static __inline void SETSPEED100(struct I2cBusObject * a)
         int val = READ_IP0105_I2C_CONTROL(a);
 
         val &= 0x00F0;
-        val |= 0x00F4;
+        val |= 0x0004;
         WRITE_IP0105_I2C_CONTROL(a, val);
 }
 
@@ -200,7 +201,8 @@ static __inline void SETSPEED25(struct I2cBusObject * a)
 {
         int val = READ_IP0105_I2C_CONTROL(a);
 
-        val |= 0x00F7;
+        val &= 0x00F0;
+        val |= 0x0007;
         WRITE_IP0105_I2C_CONTROL(a, val);
 }
 
@@ -208,7 +210,8 @@ static __inline void SETSPEED400(struct I2cBusObject * a)
 {
         int val = READ_IP0105_I2C_CONTROL(a);
 
-        val |= 0x00F0;
+        val &= 0x00F0;
+        val |= 0x0000;
         WRITE_IP0105_I2C_CONTROL(a, val);
 }
 
@@ -843,7 +846,7 @@ static void ip0105_init(struct i2c_adapter * i2c_adap, int device)
 
         DISABLE_I2C_CONTROLLER( busptr ); /* Disable I2C controller */
 
-        SETSPEED100(busptr);
+        SETSPEED400(busptr);
 
         AAOUT( busptr, 0 ); /* Slave mode disabled */
         STOOUT( busptr, 0 ); /* Do not generate stop condition */
@@ -1099,6 +1102,11 @@ static struct i2c_adapter * ip0105_ops[NR_I2C_DEVICES] = { &ip0105_ops_0, &ip010
 int __init i2c_algo_ip0105_init (void)
 {
     int device;
+    
+    // make sure clock is enabled. timings are wrong if it isn't configured
+    // for 24MHz functional clock.
+    PNX8550_CM_I2C_FAST_CTL = PNX8550_CM_CLK_ENABLE | PNX8550_CM_CLK_FCLOCK;
+    
     printk("i2c-ip0105: I2C IP0105 algorithm module\n");
     for (device = 0; device < NR_I2C_DEVICES; device++)
     {
