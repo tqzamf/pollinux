@@ -58,6 +58,16 @@
 #define PNX8550_CM_DDS8_CTL    *(volatile unsigned long *)(PNX8550_CM_BASE + 0x03C)
 #define PNX8550_CM_DDS9_CTL    *(volatile unsigned long *)(PNX8550_CM_BASE + 0x040)
 #define PNX8550_CM_CAB_POWERDOWN *(volatile unsigned long *)(PNX8550_CM_BASE + 0x044)
+#define PNX8550_CM_CAB_102_CTR 0x0e
+#define PNX8550_CM_CAB_108_CTR 0x0f
+#define PNX8550_CM_CAB_115_CTR 0x10
+#define PNX8550_CM_CAB_123_CTR 0x11
+#define PNX8550_CM_CAB_133_CTR 0x12
+#define PNX8550_CM_CAB_144_CTR 0x13
+#define PNX8550_CM_CAB_157_CTR 0x14
+#define PNX8550_CM_CAB_173_CTR 0x15
+#define PNX8550_CM_CAB_192_CTR 0x16
+#define PNX8550_CM_CAB_27_CTR  0x04
 
 // SPDO and AO1 are verified, the rest is guessed
 #define PNX8550_CM_SPDO_BCLK_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB00)
@@ -69,6 +79,15 @@
 #define PNX8550_CM_AO1_SCLK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB1C)
 #define PNX8550_CM_AI2_SCLK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB20)
 #define PNX8550_CM_AO2_SCLK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB24)
+#define PNX8550_CM_SPDO_BCLK_CTR  0x46
+#define PNX8550_CM_AI1_OSCK_CTR   0x3e
+#define PNX8550_CM_AO1_OSCK_CTR   0x40
+#define PNX8550_CM_AI2_OSCK_CTR   0x42
+#define PNX8550_CM_AO2_OSCK_CTR   0x44
+#define PNX8550_CM_AI1_SCLK_CTR   0x3f
+#define PNX8550_CM_AO1_SCLK_CTR   0x41
+#define PNX8550_CM_AI2_SCLK_CTR   0x43
+#define PNX8550_CM_AO2_SCLK_CTR   0x45
 
 // from PNX2015 datasheet
 #define PNX8550_CM_QVCP1_OUT_CTL   (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa00))
@@ -95,16 +114,34 @@
 #define PNX8550_CM_QVCP_CLK_PROC86  0x10
 #define PNX8550_CM_QVCP_CLK_PROC96  0x08
 #define PNX8550_CM_QVCP_CLK_PROC108 0x00
+#define PNX8550_CM_QVCP1_OUT_CTR   0x38
+#define PNX8550_CM_QVCP1_PIX_CTR   0x39
+#define PNX8550_CM_QVCP1_PROC_CTR  0x3a
+#define PNX8550_CM_QVCP2_OUT_CTR   0x3b
+#define PNX8550_CM_QVCP2_PIX_CTR   0x3c
+#define PNX8550_CM_QVCP2_PROC_CTR  0x3d
 
 #define PNX8550_CM_MEM_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x100)
 #define PNX8550_CM_FREQ_CTR  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x104)
 #define PNX8550_CM_MIPS_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x200)
 #define PNX8550_CM_TM0_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x204)
 #define PNX8550_CM_TM1_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x208)
-#define PNX8550_CM_DCSN_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x20c)
-#define PNX8550_CM_DTL_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x210)
+#define PNX8550_CM_MDCSN_CTL *(volatile unsigned long *)(PNX8550_CM_BASE + 0x20c)
+#define PNX8550_CM_MDTL_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x210)
+#define PNX8550_CM_TDCSN_CTL *(volatile unsigned long *)(PNX8550_CM_BASE + 0x214)
+#define PNX8550_CM_TDTL_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x218)
+#define PNX8550_CM_TUNNEL_CTL *(volatile unsigned long *)(PNX8550_CM_BASE + 0x21c)
 #define PNX8550_CM_TM_CLK_PLL    0x02
 #define PNX8550_CM_TM_CLK_MIPS   0x04
+#define PNX8550_CM_MEM_CTR   0x37
+#define PNX8550_CM_MIPS_CTR  0x17
+#define PNX8550_CM_TM0_CTR   0x18
+#define PNX8550_CM_TM1_CTR   0x19
+#define PNX8550_CM_MDCSN_CTR 0x1a
+#define PNX8550_CM_MDTL_CTR  0x1b
+#define PNX8550_CM_TDCSN_CTR 0x1c
+#define PNX8550_CM_TDTL_CTR  0x1d
+#define PNX8550_CM_TUNNEL_CTR 0x1e
 
 #define PNX8550_CM_VMPG_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x400)
 #define PNX8550_CM_VLD_CTL    *(volatile unsigned long *)(PNX8550_CM_BASE + 0x404)
@@ -118,6 +155,20 @@
 #define PNX8550_CM_TSTAMP_CTL *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb30)
 #define PNX8550_CM_TSDMA_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb34)
 #define PNX8550_CM_DVDCSS_CTL *(volatile unsigned long *)(PNX8550_CM_BASE + 0xb3c)
+#define PNX8550_CM_VMPG_CTR   0x22
+#define PNX8550_CM_VLD_CTR    0x23
+#define PNX8550_CM_MBS1_CTR   0x20
+#define PNX8550_CM_MBS2_CTR   0x4d
+#define PNX8550_CM_MBS3_CTR   0x21
+#define PNX8550_CM_VIP1_CTR   0x4b
+#define PNX8550_CM_VIP2_CTR   0x4c
+#define PNX8550_CM_MSP1_CTR1  0x30
+#define PNX8550_CM_MSP1_CTR2  0x31
+#define PNX8550_CM_MSP2_CTR1  0x32
+#define PNX8550_CM_MSP2_CTR2  0x33
+#define PNX8550_CM_TSTAMP_CTR 0x35
+#define PNX8550_CM_TSDMA_CTR  0x4f
+#define PNX8550_CM_DVDCSS_CTR 0x2e
 
 #define PNX8550_CM_OHCI_CTL     *(volatile unsigned long *)(PNX8550_CM_BASE + 0x710)
 #define PNX8550_CM_I2C_HP_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x714)
@@ -128,6 +179,14 @@
 #define PNX8550_CM_SC2_CTL      *(volatile unsigned long *)(PNX8550_CM_BASE + 0x72c)
 #define PNX8550_CM_CLK_ENABLE  0x01
 #define PNX8550_CM_CLK_FCLOCK  0x02
+#define PNX8550_CM_OHCI_CTR1    0x26
+#define PNX8550_CM_OHCI_CTR2    0x27
+#define PNX8550_CM_I2C_HP_CTR   0x28
+#define PNX8550_CM_I2C_FAST_CTR 0x29
+#define PNX8550_CM_UART1_CTR    0x2a
+#define PNX8550_CM_UART2_CTR    0x2b
+#define PNX8550_CM_SC1_CTR      0x2c
+#define PNX8550_CM_SC2_CTR      0x2d
 
 #define PNX8550_CM_PLL_BLOCKED_MASK     0x80000000
 #define PNX8550_CM_PLL_LOCK_MASK        0x40000000
