@@ -69,10 +69,6 @@
 #define PNX8550_CM_AO1_SCLK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB1C)
 #define PNX8550_CM_AI2_SCLK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB20)
 #define PNX8550_CM_AO2_SCLK_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0xB24)
-#define PNX8550_CM_AO_CLK_ENABLE 0x01
-#define PNX8550_CM_AO_CLK_FCLOCK 0x02
-#define PNX8550_CM_SPDO_CLK_ENABLE 0x01
-#define PNX8550_CM_SPDO_CLK_FCLOCK 0x02
 
 // from PNX2015 datasheet
 #define PNX8550_CM_QVCP1_OUT_CTL   (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa00))
@@ -85,8 +81,6 @@
 #define PNX8550_CM_QVCP2_PROC_CTL  (*(volatile unsigned long *)(PNX8550_CM_BASE + 0xa1c))
 #define PNX8550_CM_QVCP2_PLL       PNX8550_CM_PLL3_CTL
 #define PNX8550_CM_QVCP2_DDS       PNX8550_CM_DDS1_CTL
-#define PNX8550_CM_QVCP_CLK_ENABLE  0x01
-#define PNX8550_CM_QVCP_CLK_FCLOCK  0x02
 #define PNX8550_CM_QVCP_CLK_DIV_1   0x00
 #define PNX8550_CM_QVCP_CLK_DIV_2   0x08
 #define PNX8550_CM_QVCP_CLK_DIV_3   0x10
@@ -109,7 +103,6 @@
 #define PNX8550_CM_TM1_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x208)
 #define PNX8550_CM_DCSN_CTL  *(volatile unsigned long *)(PNX8550_CM_BASE + 0x20c)
 #define PNX8550_CM_DTL_CTL   *(volatile unsigned long *)(PNX8550_CM_BASE + 0x210)
-#define PNX8550_CM_TM_CLK_ENABLE 0x01
 #define PNX8550_CM_TM_CLK_PLL    0x02
 #define PNX8550_CM_TM_CLK_MIPS   0x04
 
@@ -133,6 +126,8 @@
 #define PNX8550_CM_UART2_CTL    *(volatile unsigned long *)(PNX8550_CM_BASE + 0x720)
 #define PNX8550_CM_SC1_CTL      *(volatile unsigned long *)(PNX8550_CM_BASE + 0x728)
 #define PNX8550_CM_SC2_CTL      *(volatile unsigned long *)(PNX8550_CM_BASE + 0x72c)
+#define PNX8550_CM_CLK_ENABLE  0x01
+#define PNX8550_CM_CLK_FCLOCK  0x02
 
 #define PNX8550_CM_PLL_BLOCKED_MASK     0x80000000
 #define PNX8550_CM_PLL_LOCK_MASK        0x40000000

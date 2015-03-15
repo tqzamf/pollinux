@@ -505,8 +505,8 @@ static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
     // pixels to output anyway, so the frequency doesn't matter.
     qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
     qvcp_set_clock(par, clk_dds, PNX8550_CM_DDS_27MHZ);
-    qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
-			| PNX8550_CM_QVCP_CLK_FCLOCK);
+    qvcp_set_clock(par, out_clk, PNX8550_CM_CLK_ENABLE
+			| PNX8550_CM_CLK_FCLOCK);
 	qvcp_set_clock(par, pix_clk, 0);
 	qvcp_set_clock(par, proc_clk, 0);
 }
@@ -522,27 +522,27 @@ static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
         qvcp_set_clock(par, clk_pll, 0x382c0308);
         // fake HD pixel clock is half the interface clock because it uses
         // 4:2:2 interface (49.5MHz pixel clock)
-        qvcp_set_clock(par, pix_clk, PNX8550_CM_QVCP_CLK_ENABLE
-                | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
+        qvcp_set_clock(par, pix_clk, PNX8550_CM_CLK_ENABLE
+                | PNX8550_CM_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
         // process layers at 58MHz. has to be faster than the pixel clock,
         // so for fake HD mode it has to be ≥50MHz.
-        qvcp_set_clock(par, proc_clk, PNX8550_CM_QVCP_CLK_ENABLE
-                | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC58);
+        qvcp_set_clock(par, proc_clk, PNX8550_CM_CLK_ENABLE
+                | PNX8550_CM_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC58);
         break;
     default:
         // SD mode requires 27MHz interface clock
         qvcp_set_clock(par, clk_pll, PNX8550_CM_PLL_27MHZ);
         // SD pixel clock is 13.5MHz (half the interface clock)
-        qvcp_set_clock(par, pix_clk, PNX8550_CM_QVCP_CLK_ENABLE
-                | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
+        qvcp_set_clock(par, pix_clk, PNX8550_CM_CLK_ENABLE
+                | PNX8550_CM_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_DIV_2);
         // process layers at 17MHz. slow but sufficient for SD.
-        qvcp_set_clock(par, proc_clk, PNX8550_CM_QVCP_CLK_ENABLE
-                | PNX8550_CM_QVCP_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17);
+        qvcp_set_clock(par, proc_clk, PNX8550_CM_CLK_ENABLE
+                | PNX8550_CM_CLK_FCLOCK | PNX8550_CM_QVCP_CLK_PROC17);
         break;
     }
     // enable interface clock
-    qvcp_set_clock(par, out_clk, PNX8550_CM_QVCP_CLK_ENABLE
-            | PNX8550_CM_QVCP_CLK_FCLOCK);
+    qvcp_set_clock(par, out_clk, PNX8550_CM_CLK_ENABLE
+            | PNX8550_CM_CLK_FCLOCK);
     // disable QVCP power-down mode
     qvcp_set_reg(par, PNX8550_DCSN_POWERDOWN_OFFSET, 0);
 

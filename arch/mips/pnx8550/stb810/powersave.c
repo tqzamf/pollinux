@@ -81,7 +81,7 @@ static int __init pnx8550_powerdown_unused(void)
     // Make sure the QVCP's output clock is enabled and available at the
     // DACs. If it isn't, any access to the DACs will hang the system,
     // regardless of any configured bus timeouts!
-    PNX8550_CM_QVCP2_OUT_CTL = PNX8550_CM_TM_CLK_ENABLE | PNX8550_CM_TM_CLK_PLL;
+    PNX8550_CM_QVCP2_OUT_CTL = PNX8550_CM_CLK_ENABLE | PNX8550_CM_TM_CLK_PLL;
     udelay(300);
 
     // put the DACs into power-down mode
