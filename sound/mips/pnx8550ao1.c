@@ -42,6 +42,12 @@ MODULE_AUTHOR("Matthias <tqzamf@gmail.com>");
 MODULE_DESCRIPTION("PNX8550 AO1 audio");
 MODULE_LICENSE("GPL");
 
+static struct platform_device_id platform_device_ids[] = {
+	{ .name = "pnx8550ao1" },
+	{}
+};
+MODULE_DEVICE_TABLE(platform, platform_device_ids);
+
 struct snd_pnx8550ao1 {
 	struct snd_card *card;
 	unsigned int control;

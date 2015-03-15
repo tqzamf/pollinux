@@ -1242,3 +1242,14 @@ static int __init pnx8550_framebuffer_init(void)
 }
 
 module_init(pnx8550_framebuffer_init);
+
+MODULE_AUTHOR("Matthias <tqzamf@gmail.com>");
+MODULE_DESCRIPTION("PNX8550 STB810 framebuffer driver");
+MODULE_LICENSE("GPL");
+MODULE_VERSION("0.1");
+
+static struct platform_device_id platform_device_ids[] = {
+	{ .name = "pnx8550fb" },
+	{}
+};
+MODULE_DEVICE_TABLE(platform, platform_device_ids);

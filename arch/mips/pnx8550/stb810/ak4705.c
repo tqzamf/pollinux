@@ -94,6 +94,7 @@ void ak4705_set_mode(int mode)
 		break;
 	}
 }
+EXPORT_SYMBOL(ak4705_set_mode);
 
 // configures AK4705 to output RGB + CVBS on all outputs
 static void ak4705_setup(void)

@@ -2167,7 +2167,7 @@ config FB_PNX4008_DUM_RGB
 	  Say Y here to enable support for PNX4008 RGB Framebuffer
 
 config FB_PNX8550
-	tristate "PAL/NTSC framebuffer for the PNX8550 STB810 platform"
+	tristate "QVCP framebuffer for the PNX8550 STB810 platform"
 	depends on FB && PNX8550_STB810
 	select FB_SYS_FILLRECT
 	select FB_SYS_COPYAREA
