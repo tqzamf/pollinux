@@ -97,8 +97,8 @@
 // place the CIMaX right after flash at +64MB
 #define CIMAX_OFFSET_MB   64
 #define CIMAX_I2C_ADDR   0x40
-#define CIMAX_IRQ        PNX8550_INT_PCI_INTA
-#define CIMAX_IRQ_STATUS PNX8550_GPIO_DATA(PNX8550_GPIO_IRQSSTAT_CIMAX)
+#define CIMAX_IRQ        PNX8550_GPIO_INT_CIMAX
+#define CIMAX_IRQ_STATUS PNX8550_GPIO_DATA(PNX8550_GPIO_IRQ_CIMAX)
 // the device provides 4 block of 64k each, selected by A24/25
 #define CIMAX_NUM_BLOCKS 4
 #define CIMAX_BLOCK_SHIFT 16

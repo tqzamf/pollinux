@@ -44,9 +44,19 @@ static char gic_prio[PNX8550_INT_GIC_TOTINT] = {
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  20 - 29
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  30 - 39
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  40 - 49
-	1, 1, 1, 1, 1, 1, 1, 1, 2, 1,	//  50 - 59
+	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  50 - 59
 	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  60 - 69
 	1			//  70
+};
+static char gic_inv[PNX8550_INT_GIC_TOTINT] = {
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//   0 -  9
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//  10 - 19
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//  20 - 29
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//  30 - 39
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//  40 - 49
+	0, 0, 0, 0, 0, 0, 0, 0, 1, 1,	//  50 - 59
+	1, 1, 1, 1, 1, 1, 0, 0, 0, 0,	//  60 - 69
+	0			//  70
 };
 
 static void hw0_irqdispatch(int irq)
@@ -194,14 +204,15 @@ void __init arch_init_irq(void)
 		/*
 		 * enable change of TARGET, ENABLE and ACTIVE_LOW bits
 		 * set TARGET        0 to route through hw0 interrupt
-		 * set ACTIVE_LOW    0 active high  (correct?)
+		 * set ACTIVE_LOW    as per gic_inv
 		 *
 		 * We really should setup an interrupt description table
 		 * to do this nicely.
 		 * Note, PCI INTA is active low on the bus, but inverted
 		 * in the GIC, so to us it's active high.
 		 */
-		PNX8550_GIC_REQ(i - PNX8550_INT_GIC_MIN) = 0x1E000000;
+		PNX8550_GIC_REQ(i - PNX8550_INT_GIC_MIN) = 0x1E000000
+				| (gic_inv[i - PNX8550_INT_GIC_MIN] << 17);
 
 		/* mask/priority is still 0 so we will not get any
 		 * interrupts until it is unmasked */

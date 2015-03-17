@@ -6,6 +6,7 @@
  */
 
 #include <asm-generic/gpio.h>
+#include <int.h>
 
 #ifndef __PNX8550_GPIO_H
 #define __PNX8550_GPIO_H
@@ -16,11 +17,12 @@
 #define gpio_get_value __gpio_get_value
 #define gpio_cansleep __gpio_cansleep
 
-
 #define PNX8550_GPIO_BASE(pin) (0xBBF04000 | ((pin) >> 4) << 2)
 #define PNX8550_GPIO_MODE_OFFSET  0x00
 #define PNX8550_GPIO_DATA_OFFSET  0x10
 #define PNX8550_GPIO_COUNT 64
+#define PNX8550_GPIO_IRQ_SOURCE(irq) \
+		(*(volatile unsigned long *)(0xBBF04500 + ((((irq) - PNX8550_INT_GPIO0) & 7) << 2)))
 
 #define _PNX8550_GPIO_MODE(pin) (*(volatile unsigned long *)(PNX8550_GPIO_BASE(pin) + PNX8550_GPIO_MODE_OFFSET))
 #define _PNX8550_GPIO_DATA(pin) (*(volatile unsigned long *)(PNX8550_GPIO_BASE(pin) + PNX8550_GPIO_DATA_OFFSET))
@@ -39,15 +41,24 @@
 #define PNX8550_GPIO_DATA(pin)       (_PNX8550_GPIO_DATA(pin) & (0x00001 << ((pin) & 15)))
 #define PNX8550_GPIO_DIR(pin)        (_PNX8550_GPIO_DATA(pin) & (0x10000 << ((pin) & 15)))
 
-#define PNX8550_GPIO_IRQSSTAT_CIMAX 8
-#define PNX8550_GPIO_STANDBY 12
-#define PNX8550_GPIO_CPU_BLUE 44
-#define PNX8550_GPIO_CPU_RED 56
+#define PNX8550_GPIO_IRQ_SATA  3
+#define PNX8550_GPIO_IRQ_CIMAX 8
+#define PNX8550_GPIO_IRQ_MPCI  9
+#define PNX8550_GPIO_IRQ_USB   10
+#define PNX8550_GPIO_IRQ_ETHER 11
+#define PNX8550_GPIO_INT_SATA  PNX8550_INT_GPIO0
+#define PNX8550_GPIO_INT_USB   PNX8550_INT_GPIO1
+#define PNX8550_GPIO_INT_ETHER PNX8550_INT_GPIO2
+#define PNX8550_GPIO_INT_MPCI  PNX8550_INT_GPIO3
+#define PNX8550_GPIO_INT_CIMAX PNX8550_INT_GPIO4
+#define PNX8550_GPIO_STANDBY   12
+#define PNX8550_GPIO_CPU_BLUE  44
+#define PNX8550_GPIO_CPU_RED   56
 #define PNX8550_GPIO_CPU_GREEN 60
-#define PNX8550_GPIO_PT6955_DATA 20
-#define PNX8550_GPIO_PT6955_CLOCK 21
+#define PNX8550_GPIO_PT6955_DATA   20
+#define PNX8550_GPIO_PT6955_CLOCK  21
 #define PNX8550_GPIO_PT6955_STROBE 22
-#define PNX8550_GPIO_SC1_VCC 45
+#define PNX8550_GPIO_SC1_VCC  45
 #define PNX8550_GPIO_SC1_AUX1 46
 #define PNX8550_GPIO_SC1_AUX2 47
 

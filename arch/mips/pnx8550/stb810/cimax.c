@@ -368,7 +368,7 @@ static int cimax_irq_unmask_task(void *data)
 
 static irqreturn_t cimax_isr(int irq, void *dev_id)
 {
-	if (PNX8550_GPIO_DATA(PNX8550_GPIO_IRQSSTAT_CIMAX))
+	if (PNX8550_GPIO_DATA(PNX8550_GPIO_IRQ_CIMAX))
 		// wasn't us; next handler, please!
 		return IRQ_NONE;
 
