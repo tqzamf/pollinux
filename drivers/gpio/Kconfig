@@ -201,6 +201,14 @@ config GPIO_GE_FPGA
 	  and write pin state) for GPIO implemented in a number of GE single
 	  board computers.
 
+config GPIO_PNX8550_SC1
+	tristate "PNX8550 STB810 Smartcard interface as GPIO"
+	depends on PNX8550_STB810
+	help
+	  This driver allows using the PNX8550 STB810 Smartcard interface as
+	  additional GPIOs with switchable IO voltage and excellent protection
+	  against electrical nastienesses.
+
 comment "I2C GPIO expanders:"
 
 config GPIO_MAX7300
