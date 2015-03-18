@@ -29,14 +29,22 @@
 // 43: CON10.1 (3.3V bidirectional)
 // 57: junction of R1024/5 near smartcard slot (3.3V bidirectional)
 static const char *pnx8550_gpio_names[] = {
-	"boot0", "boot1","boot2",NULL, NULL,      NULL,   NULL,    NULL,    /* 0~7 */
-	 NULL,    NULL,   NULL,  NULL,"standby",  NULL,   NULL,    NULL,    /* 8~15 */
-	"res1",  "res2",  NULL,  NULL,"fpdata",  "fpclk","fpstb",  NULL,    /* 16~23 */
-	 NULL,    NULL,   NULL,  NULL, NULL,      NULL,   NULL,    NULL,    /* 24~31 */
-	 NULL,    NULL,   NULL,  NULL, NULL,      NULL,   NULL,    NULL,    /* 32~39 */
-	 NULL,    NULL,   NULL,  NULL,"cpu-blue","scvcc","scaux1","scaux2", /* 40~47 */
-	 NULL,    NULL,   NULL,  NULL,"bootmode", NULL,   NULL,    NULL,    /* 48~55 */
-	"cpu-red",NULL,   NULL,  NULL,"cpu-green",NULL,   NULL,    NULL,    /* 56~63 */
+	"bootscr1",  "bootscr2", "bootscr3", "irq-sata",
+	 NULL,        NULL,      "irq-res1", "irq-res2", /* 0~7 */
+	"irq-cimax", "irq-mpci", "irq-usb",  "irq-ether",
+	"standby",   "irq-res3",  NULL,       NULL,      /* 8~15 */
+	"res1",      "res2",      NULL,       NULL,
+	"fp-data",   "fp-clock", "fp-strobe", NULL,      /* 16~23 */
+	 NULL,        NULL,       NULL,       NULL,
+	 NULL,        NULL,       NULL,       NULL,      /* 24~31 */
+	 NULL,        NULL,       NULL,       NULL,
+	 NULL,        NULL,       NULL,       NULL,      /* 32~39 */
+	 NULL,        NULL,       NULL,      "con10-1",
+	"cpu-blue",  "sc-vcc",   "sc-aux1",  "sc-aux2",  /* 40~47 */
+	 NULL,        NULL,       NULL,       NULL,
+	"bootmode",   NULL,       NULL,       NULL,      /* 48~55 */
+	"cpu-red",   "r1024-25",  NULL,       NULL,
+	"cpu-green",  NULL,       NULL,       NULL,      /* 56~63 */
 };
 
 #define IN 1
@@ -44,14 +52,14 @@ static const char *pnx8550_gpio_names[] = {
 #define INOUT 3
 #define SYS 0
 static const char pnx8550_gpio_config[] = {
-	IN,   IN,   IN,   IN,   INOUT,INOUT,IN,   IN,    /* 0~7 */
-	IN,   IN,   IN,   IN,   SYS,  INOUT,INOUT,INOUT, /* 8~15 */
-	IN,   IN,   INOUT,INOUT,OUT,  OUT,  OUT,  INOUT, /* 16~23 */
-	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 24~31 */
-	INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT,INOUT, /* 32~39 */
-	INOUT,INOUT,INOUT,INOUT,OUT,  SYS,  SYS,  SYS,   /* 40~47 */
-	INOUT,INOUT,INOUT,INOUT,IN,   INOUT,INOUT,INOUT, /* 48~55 */
-	OUT,  INOUT,INOUT,INOUT,OUT,  INOUT,INOUT,INOUT, /* 56~63 */
+	IN,    IN,    IN,    IN,    INOUT, INOUT, IN,    IN,    /* 0~7 */
+	IN,    IN,    IN,    IN,    SYS,   IN,    INOUT, INOUT, /* 8~15 */
+	IN,    IN,    INOUT, INOUT, OUT,   OUT,   OUT,   INOUT, /* 16~23 */
+	INOUT, INOUT, INOUT, INOUT, INOUT, INOUT, INOUT, INOUT, /* 24~31 */
+	INOUT, INOUT, INOUT, INOUT, INOUT, INOUT, INOUT, INOUT, /* 32~39 */
+	INOUT, INOUT, INOUT, INOUT, OUT,   SYS,   SYS,   SYS,   /* 40~47 */
+	INOUT, INOUT, INOUT, INOUT, IN,    INOUT, INOUT, INOUT, /* 48~55 */
+	OUT,   INOUT, INOUT, INOUT, OUT,   INOUT, INOUT, INOUT, /* 56~63 */
 };
 
 static void pnx8550_gpio_set(struct gpio_chip *chip,
