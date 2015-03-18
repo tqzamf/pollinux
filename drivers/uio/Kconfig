@@ -111,4 +111,14 @@ config UIO_PRUSS
 	  To compile this driver as a module, choose M here: the module
 	  will be called uio_pruss.
 
+config UIO_CIMAX
+	tristate "CIMaX on PNX8550 STB810"
+	depends on PNX8550_STB810
+	help
+	  Driver for Atmel CIMaX on PNX8550 STB810.
+
+	  Memory space and interrupts are accessible through the UIO device.
+	  Other functions (power control, reset, etc.) are presented as sysfs
+	  files.
+
 endif
