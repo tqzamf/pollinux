@@ -3,5 +3,5 @@ for BOOT in /media/matthias/*/boot; do
 	ROOT=$(dirname $BOOT)
 	echo installing to $ROOT
 	sudo cp uImage $ROOT/boot/linux
-	sudo make ARCH=mips INSTALL_MOD_PATH=$ROOT/ modules_install
+	sudo make ARCH=mips INSTALL_MOD_PATH=$ROOT/ modules_install firmware_install
 done
