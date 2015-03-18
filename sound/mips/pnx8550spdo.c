@@ -57,8 +57,8 @@ struct snd_pnx8550spdo {
 	snd_pcm_uframes_t ptr;
 	struct snd_pcm_substream *substream;
 	struct device *dev;
-	unsigned char cswl[24];
-	unsigned char cswr[24];
+	unsigned char cswl[6];
+	unsigned char cswr[6];
 };
 
 static irqreturn_t snd_pnx8550spdo_isr(int irq, void *dev_id)
@@ -325,36 +325,49 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 		for (i = 0; i < len; i += 2*192) {
 			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_BLOCK;
 			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
-		#define COPY16(cswbit) \
-			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN1 \
-					| (((*csw1) & (1 << cswbit)) << (30 - cswbit)); \
-			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2 \
-					| (((*csw2) & (1 << cswbit)) << (30 - cswbit));
+			#define COPY16(cswbit) \
+				*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN1 \
+						| (((*csw1) & (1 << cswbit)) << (30 - cswbit)); \
+				*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2 \
+						| (((*csw2) & (1 << cswbit)) << (30 - cswbit));
+			#define COPY16S() \
+				*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN1; \
+				*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
 			COPY16(1); COPY16(2); COPY16(3);
 			COPY16(4); COPY16(5); COPY16(6); COPY16(7);
 			csw1++; csw2++;
-			for (j = 1; j < 192/8; j++) {
+			for (j = 1; j < 6; j++) {
 				COPY16(0); COPY16(1); COPY16(2); COPY16(3);
 				COPY16(4); COPY16(5); COPY16(6); COPY16(7);
 				csw1++; csw2++;
+			}
+			for (j = 6; j < 192/8; j++) {
+				COPY16S(); COPY16S(); COPY16S(); COPY16S();
+				COPY16S(); COPY16S(); COPY16S(); COPY16S();
 			}
 		}
 	} else {
 		for (i = 0; i < len; i += 2*192) {
 			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_BLOCK;
 			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN2;
-		#define COPY32(cswbit) \
-			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN1 \
-					| (((*csw1) & (1 << cswbit)) << (30 - cswbit)); \
-			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN2 \
-					| (((*csw2) & (1 << cswbit)) << (30 - cswbit));
+			#define COPY32(cswbit) \
+				*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN1 \
+						| (((*csw1) & (1 << cswbit)) << (30 - cswbit)); \
+				*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN2 \
+						| (((*csw2) & (1 << cswbit)) << (30 - cswbit));
+			#define COPY32S() \
+				*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN1; \
+				*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN2;
 			COPY32(1); COPY32(2); COPY32(3);
 			COPY32(4); COPY32(5); COPY32(6); COPY32(7);
-			csw1++; csw2++;
-			for (j = 1; j < 192/8; j++) {
+			for (j = 1; j < 6; j++) {
+				csw1++; csw2++;
 				COPY32(0); COPY32(1); COPY32(2); COPY32(3);
 				COPY32(4); COPY32(5); COPY32(6); COPY32(7);
-				csw1++; csw2++;
+			}
+			for (j = 6; j < 192/8; j++) {
+				COPY32S(); COPY32S(); COPY32S(); COPY32S();
+				COPY32S(); COPY32S(); COPY32S(); COPY32S();
 			}
 		}
 	}
