@@ -137,8 +137,15 @@ static int snd_pnx8550spdo_hw_params(struct snd_pcm_substream *substream,
 					struct snd_pcm_hw_params *hw_params)
 {
 	struct snd_pnx8550spdo *chip = snd_pcm_substream_chip(substream);
+	int size = params_buffer_bytes(hw_params);
 
 	if (chip->buffer == NULL) {
+		if (size != 2*PNX8550_SPDO_BUF_VIRTUAL) {
+			printk(KERN_ERR "pnx8550spdo: attempt to allocate %d byte buffer"
+					" (need %d)\n", size, 2*PNX8550_SPDO_BUF_VIRTUAL);
+			return -EINVAL;
+		}
+
 		/* allocate DMA-capable buffers */
 		chip->buffer = dma_alloc_coherent(NULL, PNX8550_SPDO_BUF_ALLOC,
 							 &chip->buf1_dma, GFP_USER);
@@ -297,7 +304,7 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 {
 	struct snd_pnx8550spdo *chip = snd_pcm_substream_chip(substream);
 	struct snd_pcm_runtime *runtime = substream->runtime;
-	unsigned int off, len, offset, i, j;
+	unsigned int offset, len, i, j;
 	unsigned char *csw1 = chip->cswl, *csw2 = chip->cswr;
 	u16 *source16;
 	u32 *buffer, *source32;
@@ -307,22 +314,23 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 		return 0;
 	}
 	
-	off = frames_to_bytes(substream->runtime, pos);
-	source16 = src; source32 = src;
-	if (pos == 0)
-		offset = 0;
+	// copy to correct half of buffer. they're contiguous for 16-bit, but
+	// not for 32-bit mode.
+	if (pos < chip->samples)
+		offset = 8 * pos;
 	else
-		offset = PNX8550_SPDO_BUF_SIZE;
-	len = 2*count;
-	if (offset + 4*len > PNX8550_SPDO_BUF_ALLOC) {
+		offset = PNX8550_SPDO_BUF_SIZE + 8 * (pos - chip->samples);
+	len = 8 * count;
+	if (offset + len > PNX8550_SPDO_BUF_ALLOC) {
 		printk(KERN_ERR "pnx8550spdo: refusing to write beyond end of buffer"
-				" (offset %d, length %d)\n", offset, 4*len);
+				" (offset %d, length %d)\n", offset, len);
 		return 0;
 	}
 	
 	buffer = chip->buffer + offset;
 	if (runtime->format == SNDRV_PCM_FORMAT_S16_LE) {
-		for (i = 0; i < len; i += 2*192) {
+		source16 = src;
+		for (i = 0; i < count; i += 192) {
 			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_BLOCK;
 			*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
 			#define COPY16(cswbit) \
@@ -347,7 +355,8 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 			}
 		}
 	} else {
-		for (i = 0; i < len; i += 2*192) {
+		source32 = src;
+		for (i = 0; i < count; i += 192) {
 			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_BLOCK;
 			*(buffer++) = ((((u32) *(source32++)) >> 8) << 4) | PNX8550_SPDO_PREAMBLE_CHAN2;
 			#define COPY32(cswbit) \
