@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+rm -rf tmp
+mkdir -p tmp/boot
+cp uImage tmp/boot/linux
+make ARCH=mips INSTALL_MOD_PATH=tmp modules_install firmware_install
+version=$(awk '$2 == "UTS_RELEASE" { gsub("\"", "", $3); print $3 }' \
+		include/generated/utsrelease.h)
+(cd tmp && zip -ry9 ../linux-$version.zip *)
+rm -rf tmp
