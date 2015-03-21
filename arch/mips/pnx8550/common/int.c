@@ -115,13 +115,13 @@ static inline void modify_cp0_intmask(unsigned clr_mask, unsigned set_mask)
 static inline void mask_gic_int(unsigned int irq_nr)
 {
 	/* interrupt disabled, bit 26(WE_ENABLE)=1 and bit 16(enable)=0 */
-	PNX8550_GIC_REQ(irq_nr) = 1<<28; /* set priority to 0 */
+	PNX8550_GIC_REQ(irq_nr) = (1<<26 | 0<<16);
 }
 
 static inline void unmask_gic_int(unsigned int irq_nr)
 {
 	/* set prio mask to lower four bits and enable interrupt */
-	PNX8550_GIC_REQ(irq_nr) = (1<<26 | 1<<16) | (1<<28) | gic_prio[irq_nr];
+	PNX8550_GIC_REQ(irq_nr) = (1<<26 | 1<<16) | (1<<28 | gic_prio[irq_nr]);
 }
 
 static inline void mask_irq(struct irq_data *d)
