@@ -36,29 +36,6 @@
 #include <int.h>
 #include <uart.h>
 
-/* default prio for interrupts */
-/* first one is a no-no so therefore always prio 0 (disabled) */
-static char gic_prio[PNX8550_INT_GIC_TOTINT] = {
-	0, 1, 1, 1, 1, 15, 1, 1, 1, 1,	//   0 -  9
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  10 - 19
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  20 - 29
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  30 - 39
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  40 - 49
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  50 - 59
-	1, 1, 1, 1, 1, 1, 1, 1, 1, 1,	//  60 - 69
-	1			//  70
-};
-static char gic_inv[PNX8550_INT_GIC_TOTINT] = {
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//   0 -  9
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//  10 - 19
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//  20 - 29
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//  30 - 39
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0,	//  40 - 49
-	0, 0, 0, 0, 0, 0, 0, 0, 1, 1,	//  50 - 59
-	1, 1, 1, 1, 1, 1, 0, 0, 0, 0,	//  60 - 69
-	0			//  70
-};
-
 static void hw0_irqdispatch(int irq)
 {
 	/* find out which interrupt */
@@ -120,8 +97,8 @@ static inline void mask_gic_int(unsigned int irq_nr)
 
 static inline void unmask_gic_int(unsigned int irq_nr)
 {
-	/* set prio mask to lower four bits and enable interrupt */
-	PNX8550_GIC_REQ(irq_nr) = (1<<26 | 1<<16) | (1<<28 | gic_prio[irq_nr]);
+	/* just enable the interrupt  */
+	PNX8550_GIC_REQ(irq_nr) = (1<<26 | 1<<16);
 }
 
 static inline void mask_irq(struct irq_data *d)
@@ -158,16 +135,12 @@ static inline void unmask_irq(struct irq_data *d)
 	}
 }
 
-int pnx8550_set_gic_priority(int irq, int priority)
+void pnx8550_gic_set_active_low(int irq, bool active_low)
 {
-	int gic_irq = irq-PNX8550_INT_GIC_MIN;
-	int prev_priority = PNX8550_GIC_REQ(gic_irq) & 0xf;
-
-        gic_prio[gic_irq] = priority;
-	PNX8550_GIC_REQ(gic_irq) |= (0x10000000 | gic_prio[gic_irq]);
-
-	return prev_priority;
+	int gic_irq = irq - PNX8550_INT_GIC_MIN;
+	PNX8550_GIC_REQ(gic_irq) = 1<<25 | (active_low ? 1<<17 : 0<<17);
 }
+EXPORT_SYMBOL(pnx8550_gic_set_active_low);
 
 static struct irq_chip level_irq_type = {
 	.name =		"PNX Level IRQ",
@@ -202,17 +175,16 @@ void __init arch_init_irq(void)
 		if (gic_int_line == 0 )
 			continue;	// don't fiddle with int 0
 		/*
-		 * enable change of TARGET, ENABLE and ACTIVE_LOW bits
-		 * set TARGET        0 to route through hw0 interrupt
-		 * set ACTIVE_LOW    as per gic_inv
+		 * enable change of TARGET, ENABLE, PRIORITY and ACTIVE_LOW bits
+		 * set TARGET      0 to route through hw0 interrupt
+		 * set ACTIVE_LOW  0 but can change with pnx8550_gic_set_active_low
+		 * set PRIORITY    1 so the interrupt can be enabled
+		 * set ENABLE      0 until changed by unmask_irq
 		 *
-		 * We really should setup an interrupt description table
-		 * to do this nicely.
 		 * Note, PCI INTA is active low on the bus, but inverted
 		 * in the GIC, so to us it's active high.
 		 */
-		PNX8550_GIC_REQ(i - PNX8550_INT_GIC_MIN) = 0x1E000000
-				| (gic_inv[i - PNX8550_INT_GIC_MIN] << 17);
+		PNX8550_GIC_REQ(i - PNX8550_INT_GIC_MIN) = 0x1E000001;
 
 		/* mask/priority is still 0 so we will not get any
 		 * interrupts until it is unmasked */
@@ -243,5 +215,3 @@ void __init arch_init_irq(void)
 				 handle_level_irq);
 	setup_irq(MIPS_CPU_TIMER_IRQ, &timer_action);
 }
-
-EXPORT_SYMBOL(pnx8550_set_gic_priority);

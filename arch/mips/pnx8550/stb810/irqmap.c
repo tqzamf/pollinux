@@ -25,6 +25,11 @@ char pnx8550_irq_tab[][5] __initdata = {
 
 static int gpio_set_irq_map(void)
 {
+	pnx8550_gic_set_active_low(PNX8550_GPIO_INT_SATA, true);
+	pnx8550_gic_set_active_low(PNX8550_GPIO_INT_USB, true);
+	pnx8550_gic_set_active_low(PNX8550_GPIO_INT_ETHER, true);
+	pnx8550_gic_set_active_low(PNX8550_GPIO_INT_MPCI, true);
+	pnx8550_gic_set_active_low(PNX8550_GPIO_INT_CIMAX, true);
 	PNX8550_GPIO_IRQ_SOURCE(PNX8550_GPIO_INT_SATA) = PNX8550_GPIO_IRQ_SATA;
 	PNX8550_GPIO_IRQ_SOURCE(PNX8550_GPIO_INT_USB) = PNX8550_GPIO_IRQ_USB;
 	PNX8550_GPIO_IRQ_SOURCE(PNX8550_GPIO_INT_ETHER) = PNX8550_GPIO_IRQ_ETHER;

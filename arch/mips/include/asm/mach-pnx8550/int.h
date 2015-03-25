@@ -22,6 +22,8 @@
 #ifndef __PNX8550_INT_H
 #define __PNX8550_INT_H
 
+extern void pnx8550_gic_set_active_low(int irq, bool active_low);
+
 #define PNX8550_GIC_BASE	0xBBE3E000
 
 #define PNX8550_GIC_PRIMASK_0	*(volatile unsigned long *)(PNX8550_GIC_BASE + 0x000)
