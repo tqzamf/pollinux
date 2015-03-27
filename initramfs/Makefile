@@ -9,6 +9,7 @@ files.lst: files.txt init telinit busybox/busybox busybox/busybox.links
 
 busybox/busybox busybox/busybox.links: busybox/.config \
 		busybox/*/* busybox/*/*/* busybox/*/*/*/*
+	rm busybox/busybox.links
 	KCONFIG_NOTIMESTAMP=1 make -C busybox busybox busybox.links
 
 .SUFFIXES:

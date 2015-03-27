@@ -4,6 +4,7 @@ dir tmp 755 0 0
 dir dev 755 0 0
 nod dev/console 0600 0 0 c 5 1
 dir root 755 0 0
+dir initrd 755 0 0
 dir mnt 755 0 0
 dir etc 755 0 0
 slink etc/mtab /proc/mounts 777 0 0

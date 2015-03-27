@@ -12,64 +12,91 @@ mkdir -p /lib/modules/$(cut -d' ' -f3 </proc/version)
 echo -en '\e[9;10]\e[14;5]' >/dev/tty0
 setvesablank 3
 
-# wait for root device, if given on command line.
-eval $(awk -v RS=' ' -v FS== '/^root=/{print}' /proc/cmdline)
-rootdev=$root
-if [ -n "$root" ]; then
-	echo -n "Waiting for $root ... "
-	for countdown in 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
-		if echo $root | fgrep -q =; then
-			rootdev=$(findfs $root)
+getcmdarg() {
+	id=$1
+	awk -v RS=' ' "/^$id=/{print}" /proc/cmdline | cut -d= -f2-
+}
+waitfordevice() {
+	# wait for a device, if non-empty
+	devspec=$1
+	dev=$devspec
+	if [ -n "$devspec" ]; then
+		echo -n "Waiting for $devspec ... " >&2
+		for countdown in 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
+			if echo $devspec | fgrep -q =; then
+				dev=$(findfs $devspec)
+			fi
+			[ -e "$dev" ] && break
+			echo -n "$countdown " >&2
+			sleep 1
+		done
+
+		# try one last time
+		if echo $devspec | fgrep -q =; then
+			dev=$(findfs $devspec)
 		fi
-		[ -e "$rootdev" ] && break
-		echo -n "$countdown "
-		sleep 1
+		if [ -e "$dev" ]; then
+			echo "done" >&2
+			echo "$dev"
+		else
+			echo "failed" >&2
+		fi
+	fi
+}
+checkandswitch() {
+	dir=$1
+	cmd=$2
+	# check if init is usable. if not, drop to rescue shell to let the user
+	# try and fix it.
+	while ! [ -x "$dir$cmd" ]; do
+		echo FAIL >/sys/devices/platform/frontpanel/ascii
+		echo -n "$cmd not found on $dir. "
+		case "$bootfail" in
+		reboot|retry)
+			echo "rebooting."
+			sleep 5
+			reboot
+			;;
+		halt|poweroff|off)
+			echo "power off."
+			sleep 5
+			poweroff
+			;;
+		rescue|shell|"")
+			;;
+		esac
+
+		echo "starting rescue shell."
+		echo r.con >/sys/devices/platform/frontpanel/ascii
+		setsid cttyhack ash
 	done
-	
-	# try one last time
-	if echo $root | fgrep -q =; then
-		rootdev=$(findfs $root)
-	fi
-	if [ -e "$rootdev" ]; then
-		echo "done"
-		mount "$rootdev" /root
+	# init appears to be usable. try switching to it. if this fails, that's
+	# a kernel panic, but we cannot really prevent it.
+	echo boot >/sys/devices/platform/frontpanel/ascii
+	umount -fl /sys/kernel/debug /sys /proc /dev
+	exec switch_root $dir $cmd "$@"
+}
+
+initrd=$(getcmdarg initrd)
+if [ -n "$initrd" ]; then
+	if echo $initrd | fgrep -q :; then
+		initrdroot=$(echo $initrd | cut -d: -f1)
+		initrdroot=$(waitfordevice $initrdroot)
+		initrd=/root$(echo $initrd | cut -d: -f2-)
 	else
-		echo "failed"
+		initrdroot=
+		initrd=$(waitfordevice $initrd)
 	fi
+	[ -e "$initrdroot" ] && mount $initrdroot /root
+	[ -e "$initrd" ] || echo initrd $initrd not found
+	[ -e "$initrd" ] && mount -t tmpfs initrd /initrd &&
+			(echo -n "unpacking $initrd ... ";
+			 cd /initrd && gzip -cd $initrd | cpio -id)
+	[ -n "$initrdroot" ] && umount -frl /root
+	checkandswitch /initrd /init
 fi
 
-# check if init is usable. if not, drop to rescue shell to let the user
-# try and fix it.
-while ! [ -x "/root/sbin/init" ]; do
-	echo FAIL >/sys/devices/platform/frontpanel/ascii
-	echo -n "/sbin/init not found on /root. "
-	case "$bootfail" in
-	reboot|retry)
-		echo "rebooting."
-		sleep 5
-		reboot
-		;;
-	halt|poweroff|off)
-		echo "power off."
-		sleep 5
-		poweroff
-		;;
-	rescue|shell|"")
-		;;
-	*)
-		echo "running command $bootfail."
-		setsid cttyhack $bootfail
-		;;
-	esac
-
-	echo "starting rescue shell."
-	echo r.con >/sys/devices/platform/frontpanel/ascii
-	setsid cttyhack ash
-done
-# init appears to be usable. try switching to it. if this fails, that's
-# a kernel panic, but we cannot really prevent it.
-echo boot >/sys/devices/platform/frontpanel/ascii
-mount -o bind /dev /root/dev
-mount -o bind /proc /root/proc
-mount -o rbind /sys /root/sys
-exec switch_root /root /sbin/init "$@"
+root=$(getcmdarg root)
+root=$(waitfordevice $root)
+[ -n "$root" ] && mount $root /root
+checkandswitch /root /sbin/init
