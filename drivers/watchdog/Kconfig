@@ -981,6 +981,12 @@ config PNX833X_WDT
 	  timer has expired and no process has written to /dev/watchdog during
 	  that time.
 
+config PNX8550_WDT
+	tristate "PNX8550 Counter3 Watchdog"
+	depends on SOC_PNX8550
+	help
+	  Driver for using the PNX8550's Counter3 as a watchdog.
+
 config SIBYTE_WDOG
 	tristate "Sibyte SoC hardware watchdog"
 	depends on CPU_SB1
