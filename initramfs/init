@@ -64,6 +64,14 @@ checkandswitch() {
 			;;
 		rescue|shell|"")
 			;;
+		*)
+			echo "attempting fallback to $bootfail."
+			unpackinitrd $bootfail
+			bootfail=
+			dir=/initrd
+			cmd=/init
+			continue
+			;;
 		esac
 
 		echo "starting rescue shell."
@@ -76,26 +84,32 @@ checkandswitch() {
 	umount -fl /sys/kernel/debug /sys /proc /dev
 	exec switch_root $dir $cmd "$@"
 }
-
-initrd=$(getcmdarg initrd)
-if [ -n "$initrd" ]; then
+unpackinitrd() {
+	initrd=$1
 	if echo $initrd | fgrep -q :; then
 		initrdroot=$(echo $initrd | cut -d: -f1)
 		initrdroot=$(waitfordevice $initrdroot)
-		initrd=/root$(echo $initrd | cut -d: -f2-)
+		initrd=/mnt$(echo $initrd | cut -d: -f2-)
 	else
 		initrdroot=
 		initrd=$(waitfordevice $initrd)
 	fi
-	[ -e "$initrdroot" ] && mount $initrdroot /root
+	[ -e "$initrdroot" ] && mount $initrdroot /mnt
 	[ -e "$initrd" ] || echo initrd $initrd not found
 	[ -e "$initrd" ] && mount -t tmpfs initrd /initrd &&
 			(echo -n "unpacking $initrd ... ";
 			 cd /initrd && gzip -cd $initrd | cpio -id)
-	[ -n "$initrdroot" ] && umount -frl /root
+	[ -n "$initrdroot" ] && umount -frl /mnt
+}
+
+bootfail=$(getcmdarg bootfail)
+# try only initrd boot if indicated
+initrd=$(getcmdarg initrd)
+if [ -n "$initrd" ]; then
+	unpackinitrd $initrd
 	checkandswitch /initrd /init
 fi
-
+# else try to mount the correct root
 root=$(getcmdarg root)
 root=$(waitfordevice $root)
 [ -n "$root" ] && mount $root /root
