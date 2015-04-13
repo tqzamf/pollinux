@@ -14,11 +14,13 @@ setvesablank 3
 
 getcmdarg() {
 	id=$1
+	# get a kernel argument from /proc/cmdline. not all of them end up on
+	# init's environment.
 	awk -v RS=' ' "/^$id=/{print}" /proc/cmdline | cut -d= -f2-
 }
 waitfordevice() {
-	# wait for a device, if non-empty
 	devspec=$1
+	# wait for a device, if non-empty
 	dev=$devspec
 	if [ -n "$devspec" ]; then
 		echo -n "Waiting for $devspec ... " >&2
@@ -48,9 +50,13 @@ checkandswitch() {
 	cmd=$2
 	# check if init is usable. if not, drop to rescue shell to let the user
 	# try and fix it.
-	while ! [ -x "$dir$cmd" ]; do
+	while ! mountpoint -q $dir || ! [ -x "$dir$cmd" ]; do
 		echo FAIL >/sys/devices/platform/frontpanel/ascii
-		echo -n "$cmd not found on $dir. "
+		if mountpoint -q $dir; then
+			echo -n "$cmd not found on $dir. "
+		else
+			echo -n "$dir not mounted. "
+		fi
 		case "$bootfail" in
 		reboot|retry)
 			echo "rebooting."
@@ -67,9 +73,15 @@ checkandswitch() {
 		*)
 			echo "attempting fallback to $bootfail."
 			unpackinitrd $bootfail
-			bootfail=
 			dir=/initrd
 			cmd=/init
+			# no infinite loop: if fallback fails, try next bootfail method,
+			# generally the shell.
+			bootfail=$(echo $bootfail | cut -d: -f3-)
+			# root can be mounted eg. if root was found but /sbin/init was
+			# missing. unmount it before it will be switch_root-ed out of
+			# the way, while the mountpoint is still reachable.
+			mountpoint -q /root && umount -frl /root
 			continue
 			;;
 		esac
@@ -86,24 +98,28 @@ checkandswitch() {
 }
 unpackinitrd() {
 	initrd=$1
+	# finds and unpacks a gzipped cpio archive to /initrd
 	if echo $initrd | fgrep -q :; then
 		initrdroot=$(echo $initrd | cut -d: -f1)
 		initrdroot=$(waitfordevice $initrdroot)
-		initrd=/mnt$(echo $initrd | cut -d: -f2-)
+		initrd=/mnt$(echo $initrd | cut -d: -f2)
 	else
 		initrdroot=
 		initrd=$(waitfordevice $initrd)
 	fi
-	[ -e "$initrdroot" ] && mount $initrdroot /mnt
-	[ -e "$initrd" ] || echo initrd $initrd not found
+	# mount, unpack, unmount. note that /initrd has to be on a different
+	# filesystem for switch_root to work, so we mount a tmpfs instance
+	# there.
+	[ -e "$initrdroot" ] && mount -o ro $initrdroot /mnt
+	[ -e "$initrd" ] || echo "initrd" $initrd "not found"
 	[ -e "$initrd" ] && mount -t tmpfs initrd /initrd &&
 			(echo -n "unpacking $initrd ... ";
 			 cd /initrd && gzip -cd $initrd | cpio -id)
-	[ -n "$initrdroot" ] && umount -frl /mnt
+	mountpoint -q /mnt && umount -frl /mnt
 }
 
 bootfail=$(getcmdarg bootfail)
-# try only initrd boot if indicated
+# try only initrd boot if requested
 initrd=$(getcmdarg initrd)
 if [ -n "$initrd" ]; then
 	unpackinitrd $initrd
