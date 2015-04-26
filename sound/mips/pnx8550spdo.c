@@ -343,11 +343,10 @@ static int snd_pnx8550spdo_copy(struct snd_pcm_substream *substream, int channel
 				*(buffer++) = (((u32) *(source16++)) << 12) | PNX8550_SPDO_PREAMBLE_CHAN2;
 			COPY16(1); COPY16(2); COPY16(3);
 			COPY16(4); COPY16(5); COPY16(6); COPY16(7);
-			csw1++; csw2++;
 			for (j = 1; j < 6; j++) {
+				csw1++; csw2++;
 				COPY16(0); COPY16(1); COPY16(2); COPY16(3);
 				COPY16(4); COPY16(5); COPY16(6); COPY16(7);
-				csw1++; csw2++;
 			}
 			for (j = 6; j < 192/8; j++) {
 				COPY16S(); COPY16S(); COPY16S(); COPY16S();
