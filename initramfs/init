@@ -50,7 +50,7 @@ checkandswitch() {
 	cmd=$2
 	# check if init is usable. if not, drop to rescue shell to let the user
 	# try and fix it.
-	while ! mountpoint -q $dir || ! [ -x "$dir$cmd" ]; do
+	while ! mountpoint -q $dir || ! [ -x "$dir$cmd" -o -L "$dir$cmd" ]; do
 		echo FAIL >/sys/devices/platform/frontpanel/ascii
 		if mountpoint -q $dir; then
 			echo -n "$cmd not found on $dir. "
