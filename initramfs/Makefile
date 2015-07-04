@@ -7,9 +7,14 @@ files.lst: files.txt init telinit busybox/busybox busybox/busybox.links
 	cat files.txt >files.lst
 	sed -f files.sed busybox/busybox.links >>files.lst
 
-busybox/busybox busybox/busybox.links: busybox/.config \
+libc: uclibc/.config uclibc/*/* uclibc/*/*/* uclibc/*/*/*/* \
+		uclibc/*/*/*/*/* uclibc/*/*/*/*/*/* uclibc/*/*/*/*/*/*/* \
+		uclibc/*/*/*/*/*/*/*/* uclibc/*/*/*/*/*/*/*/*/*
+	make -j10 PREFIX=../libc -C uclibc install
+
+busybox/busybox busybox/busybox.links: libc busybox/.config \
 		busybox/*/* busybox/*/*/* busybox/*/*/*/*
-	rm busybox/busybox.links
-	KCONFIG_NOTIMESTAMP=1 make -C busybox busybox busybox.links
+	rm -f busybox/busybox.links
+	make -j10 KCONFIG_NOTIMESTAMP=1 -C busybox busybox busybox.links
 
 .SUFFIXES:

@@ -34,3 +34,4 @@ busybox/scripts/kconfig/zconf.hash.c
 busybox/scripts/kconfig/zconf.tab.c
 files.tmp
 initramfs.cpio
+libc
