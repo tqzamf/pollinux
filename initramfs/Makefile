@@ -15,6 +15,7 @@ libc: uclibc/.config uclibc/*/* uclibc/*/*/* uclibc/*/*/*/* \
 busybox/busybox busybox/busybox.links: libc busybox/.config \
 		busybox/*/* busybox/*/*/* busybox/*/*/*/*
 	rm -f busybox/busybox.links
-	make -j10 KCONFIG_NOTIMESTAMP=1 -C busybox busybox busybox.links
+	make -j10 KCONFIG_NOTIMESTAMP=1 -C busybox busybox
+	make KCONFIG_NOTIMESTAMP=1 -C busybox busybox.links
 
 .SUFFIXES:
