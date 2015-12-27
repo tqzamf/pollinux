@@ -13,9 +13,16 @@ make ARCH=mips usr
 make -C initramfs initramfs.cpio
 # build kernel (vmlinux and modules)
 make ARCH=mips -j10
-$OBJCOPY -O binary --remove-section=.reginfo --remove-section=.mdebug --remove-section=.comment --remove-section=.note --remove-section=.pdr --remove-section=.options --remove-section=.MIPS.options vmlinux vmlinux.bin
+$OBJCOPY -O binary --remove-section=.reginfo --remove-section=.mdebug \
+	--remove-section=.comment --remove-section=.note \
+	--remove-section=.pdr --remove-section=.options \
+	--remove-section=.MIPS.options vmlinux vmlinux.bin
 
 # create U-Boot image
 rm -f vmlinux.bin.gz 
 gzip -n9 vmlinux.bin
-mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 -e 0x$($NM vmlinux | awk '$3=="kernel_entry"{print $1}') -n 'Pollinux PNX8950 TriMemory' -d vmlinux.bin.gz uImage
+version=$(awk '$2 == "UTS_RELEASE" { gsub("\"", "", $3); print $3 }' \
+		include/generated/utsrelease.h)
+mkimage -A mips -O linux -T kernel -C gzip -a 0x80060000 \
+	-e 0x$($NM vmlinux | awk '$3=="kernel_entry"{print $1}') \
+	-n "$version" -d vmlinux.bin.gz uImage
