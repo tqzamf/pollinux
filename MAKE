@@ -6,9 +6,8 @@ export OBJCOPY=${CROSS_COMPILE}objcopy
 export MAKEFLAGS=--no-print-directory
 
 # dummy kernel precompile so initramfs will build
-test -h include/asm || ln -s ../arch/mips/include/asm include/asm
 touch initramfs/initramfs.cpio
-make ARCH=mips usr
+make ARCH=mips usr headers_install
 # build initramfs
 make -C initramfs initramfs.cpio
 # build kernel (vmlinux and modules)
