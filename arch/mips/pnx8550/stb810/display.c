@@ -1,5 +1,5 @@
 /*
- * 7 Segment LED routines
+ * 7 Segment LED routines, buttons and IR remote control driver.
  * Based on RBTX49xx patch from CELF patch archive.
  *
  * This file is subject to the terms and conditions of the GNU General Public
@@ -13,12 +13,11 @@
 #include <linux/device.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
+#include <linux/input.h>
 #include <linux/map_to_7segment.h>
 #include <gpio.h>
 #include <linux/platform_device.h>
 #include <linux/leds.h>
-#include <linux/i2c.h>
-#include <asm/mach-pnx8550/i2c.h>
 
 #define CMD_SET_DIGITS(num) \
 		(0x00 | ((num - 4) & 3))
@@ -41,7 +40,7 @@ MODULE_PARM_DESC(boot, "string to display during boot");
 // sends a raw command to the chip
 static void pnx8550_frontpanel_send(unsigned char *data, int len) {
 	int i, j;
-	
+
 	// we don't want to get interrupted here. could use a spinlock, but
 	// preemption is a lot cheaper.
 	preempt_disable();
@@ -155,7 +154,7 @@ static unsigned  char bright_command[16] = {
 static void pnx8550_frontpanel_set_brightness(int bright)
 {
 	unsigned char buffer;
-	
+
 	if (bright < 0)
 		bright = 0;
 	if (bright > 15)
@@ -174,7 +173,7 @@ static ssize_t bright_store(struct device *dev,
 	unsigned long res;
 	size_t count = size;
 	int err;
-	
+
 	if (count > 0 && (buf[count - 1] == '\n' || buf[count - 1] == '\r'))
 		count--;
 	if (count > 2)
@@ -186,7 +185,7 @@ static ssize_t bright_store(struct device *dev,
 	err = kstrtol(buffer, 10, &res);
 	if (err)
 		return err;
-	
+
 	pnx8550_frontpanel_set_brightness(res);
 	return size;
 }
@@ -237,7 +236,7 @@ static ssize_t raw_write(struct file *filp, struct kobject *kobj,
 		char *buf, loff_t off, size_t size)
 {
 	size_t count = size;
-	
+
 	if (off > raw.size)
 		return -ENOSPC;
 	if (off + count >= raw.size)
@@ -299,7 +298,7 @@ static ssize_t dots_show(struct device *dev,
 			     char *buf)
 {
 	int i, bit;
-	
+
 	for (i = 0, bit = 0x01; i < 4; i++, bit <<= 1)
 		if (pnx8550_frontpanel_dots & bit)
 			buf[i] = '*';
@@ -425,12 +424,12 @@ static void pnx8550_frontpanel_led_set(struct led_classdev *led,
 	else
 		// unknown LED; we cannot set that
 		BUG();
-	
+
 	if (value == LED_OFF)
 		pnx8550_frontpanel_leds &= ~bit;
 	else
 		pnx8550_frontpanel_leds |= bit;
-	
+
 	// don't set the LEDs directly. if it is being set by a trigger,
 	// we might be in interrupt context, and quite possibly some other
 	// task might be accessing the display part in parallel, leaving
@@ -444,7 +443,7 @@ static void pnx8550_frontpanel_led_set(struct led_classdev *led,
 	// but if it's running then it isn't in the queue and will be
 	// rescheduled later, and the rescheduled function will set the
 	// proper value.
-	schedule_work(&pnx8550_frontpanel_leds_work);
+	(void) schedule_work(&pnx8550_frontpanel_leds_work);
 }
 
 
@@ -452,12 +451,12 @@ static void pnx8550_frontpanel_led_set(struct led_classdev *led,
 static void pnx8550_frontpanel_shutdown(struct platform_device *pdev)
 {
 	unsigned char blank = CMD_SET_DISPLAY(0, 0);
-	
+
 	// clear display at shutdown. this might be a reboot, so the chip need
 	// not be powered down immediately after
 	pnx8550_frontpanel_dots = 0;
 	ascii_store(0, 0, NULL, 0);
-	
+
 	// clear LEDs too (non-delayed)
 	pnx8550_frontpanel_leds = 0;
 	pnx8550_frontpanel_update_leds(NULL);
@@ -474,29 +473,33 @@ static unsigned char pnx8550_frontpanel_init_commands[] = {
 
 // driver initialization. uses GPIOLIB to reserve the GPIOs, but doesn't
 // otherwise use it and accesses the hardware registers directly
-static int __devexit pnx8550_frontpanel_remove(struct platform_device *pdev);
 static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 {
-	int res;
 	int *base = pdev->dev.platform_data;
-	
+	int res;
+
 	// enable special handling of dots by default. this can be enabled
 	// for other characters as well through the normal charmap loading
 	// mechanism.
 	pnx8550_frontpanel_charmap.table['.'] |= DOT_SPECIAL;
 
 	// reserve the pins. for performance, we don't actually go through the
-	// GPIO driver at all
-	gpio_request(*base + 0, "frontpanel display");
-	gpio_request(*base + 1, "frontpanel display");
-	gpio_request(*base + 2, "frontpanel display");
+	// GPIO driver at all.
+	res = gpio_request(*base + 0, "frontpanel display");
+	if (res) goto err0;
+	res = gpio_request(*base + 1, "frontpanel display");
+	if (res) goto err1;
+	res = gpio_request(*base + 2, "frontpanel display");
+	if (res) goto err2;
+
+	// configure pins
 	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_CLOCK);
 	PNX8550_GPIO_SET_HIGH(PNX8550_GPIO_PT6955_STROBE);
 	// configure for push-pull operation to allow faster timing
 	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_DATA);
 	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_CLOCK);
 	PNX8550_GPIO_MODE_PUSHPULL(PNX8550_GPIO_PT6955_STROBE);
-	
+
 	// clear display memory. if the driver shutdown didn't run properly,
 	// the display memory may not have been cleared.
 	pnx8550_frontpanel_shutdown(pdev);
@@ -507,33 +510,55 @@ static int __devinit pnx8550_frontpanel_probe(struct platform_device *pdev)
 		pnx8550_frontpanel_send(&pnx8550_frontpanel_init_commands[res], 1);
 	// set brightness to maximum
 	pnx8550_frontpanel_set_brightness(15);
-	
-	// frontpanel LEDs
+
+	// register frontpanel LEDs
 	res = led_classdev_register(&pdev->dev, &pnx8550_frontpanel_led_upper);
-	res += led_classdev_register(&pdev->dev, &pnx8550_frontpanel_led_lower);
-	if (res) {
-		printk(KERN_ERR "PNX8550 frontpanel failed to register LEDs\n");
-		pnx8550_frontpanel_remove(pdev);
-		return 1;
-	}
+	if (res) goto err3;
+	res = led_classdev_register(&pdev->dev, &pnx8550_frontpanel_led_lower);
+	if (res) goto err4;
 
 	// sysfs files
 	res = sysfs_create_bin_file(&pdev->dev.kobj, &raw);
-	res += sysfs_create_bin_file(&pdev->dev.kobj, &charmap);
-	res += sysfs_create_bin_file(&pdev->dev.kobj, &command);
-	res += device_create_file(&pdev->dev, &dev_attr_ascii);
-	res += device_create_file(&pdev->dev, &dev_attr_brightness);
-	res += device_create_file(&pdev->dev, &dev_attr_dots);
-	if (res) {
-		printk(KERN_ERR "PNX8550 frontpanel failed to register sysfs files\n");
-		pnx8550_frontpanel_remove(pdev);
-		return 1;
-	}
+	if (res) goto err5;
+	res = sysfs_create_bin_file(&pdev->dev.kobj, &charmap);
+	if (res) goto err6;
+	res = sysfs_create_bin_file(&pdev->dev.kobj, &command);
+	if (res) goto err7;
+	res = device_create_file(&pdev->dev, &dev_attr_ascii);
+	if (res) goto err8;
+	res = device_create_file(&pdev->dev, &dev_attr_brightness);
+	if (res) goto err9;
+	res = device_create_file(&pdev->dev, &dev_attr_dots);
+	if (res) goto err10;
 
 	// send boot string to display. by default, this is just "boot", and
 	// userspace can later change this to reflect the new system status.
 	ascii_store(NULL, NULL, boot, strlen(boot));
 	return 0;
+
+	// error cleanup
+err10:
+	device_remove_file(&pdev->dev, &dev_attr_brightness);
+err9:
+	device_remove_file(&pdev->dev, &dev_attr_ascii);
+err8:
+	sysfs_remove_bin_file(&pdev->dev.kobj, &command);
+err7:
+	sysfs_remove_bin_file(&pdev->dev.kobj, &charmap);
+err6:
+	sysfs_remove_bin_file(&pdev->dev.kobj, &raw);
+err5:
+	led_classdev_unregister(&pnx8550_frontpanel_led_lower);
+err4:
+	led_classdev_unregister(&pnx8550_frontpanel_led_upper);
+err3:
+	gpio_free(*base + 2);
+err2:
+	gpio_free(*base + 1);
+err1:
+	gpio_free(*base + 0);
+err0:
+	return res;
 }
 
 // driver shutdown. clears the display and formally releases the GPIOs
@@ -541,9 +566,15 @@ static int __devexit pnx8550_frontpanel_remove(struct platform_device *pdev)
 {
 	int *base = pdev->dev.platform_data;
 
-	// remove the LEDs
-	led_classdev_unregister(&pnx8550_frontpanel_led_upper);
+	// remove sysfs files and LEDs
+	device_remove_file(&pdev->dev, &dev_attr_dots);
+	device_remove_file(&pdev->dev, &dev_attr_brightness);
+	device_remove_file(&pdev->dev, &dev_attr_ascii);
+	sysfs_remove_bin_file(&pdev->dev.kobj, &command);
+	sysfs_remove_bin_file(&pdev->dev.kobj, &charmap);
+	sysfs_remove_bin_file(&pdev->dev.kobj, &raw);
 	led_classdev_unregister(&pnx8550_frontpanel_led_lower);
+	led_classdev_unregister(&pnx8550_frontpanel_led_upper);
 
 	// clear display; we shouldn't leave debris lying around
 	pnx8550_frontpanel_shutdown(pdev);
@@ -561,7 +592,7 @@ static struct platform_driver pnx8550_frontpanel_driver = {
 	.remove		= __devexit_p(pnx8550_frontpanel_remove),
 	.shutdown   = pnx8550_frontpanel_shutdown,
 	.driver		= {
-		.name	= "frontpanel",
+		.name	= "display",
 		.owner	= THIS_MODULE,
 	},
 };
@@ -569,6 +600,6 @@ static struct platform_driver pnx8550_frontpanel_driver = {
 module_platform_driver(pnx8550_frontpanel_driver);
 
 MODULE_AUTHOR("Raphael Assenat <raph@8d.com>, Trent Piepho <tpiepho@freescale.com>");
-MODULE_DESCRIPTION("PNX8550 frontpanel driver");
+MODULE_DESCRIPTION("PNX8550 frontpanel LED display driver");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("platform:frontpanel");
+MODULE_ALIAS("platform:display");

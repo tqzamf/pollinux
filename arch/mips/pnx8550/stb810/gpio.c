@@ -161,14 +161,14 @@ static struct platform_device led_device = {
 
 static int pnx8550_frontpanel_base = PNX8550_GPIO_PT6955_DATA;
 
-static struct platform_device frontpanel_device = {
-	.name		= "frontpanel",
+static struct platform_device frontpanel_display_device = {
+	.name		= "display",
 	.id			= -1,
 	.dev.platform_data	= &pnx8550_frontpanel_base,
 };
 
 static struct platform_device frontpanel_buttons_device = {
-	.name		= "frontpanel-buttons",
+	.name		= "buttons",
 	.id			= -1,
 };
 
@@ -198,13 +198,14 @@ int __init pnx8550_gpio_init(void)
 	
 	res = gpiochip_add(&pnx8550_gpio_chip);
 	if (res == 0) {
-		// try to register LED triggers
+		// try to register LED triggers. intentionally does no error checking;
+		// we don't want to break GPIO because of some none-critical device.
 		for (pin = 0; pin < ARRAY_SIZE(leds); pin++)
 			leds[pin].gpio += pnx8550_gpio_chip.base;
 		platform_device_register(&led_device);
-		// register frontpanel display
+		// register frontpanel display and buttons
 		pnx8550_frontpanel_base += pnx8550_gpio_chip.base;
-		platform_device_register(&frontpanel_device);
+		platform_device_register(&frontpanel_display_device);
 		platform_device_register(&frontpanel_buttons_device);
 		// register smartcard GPIO controller
 		pnx8550_smartcard_base += pnx8550_gpio_chip.base;

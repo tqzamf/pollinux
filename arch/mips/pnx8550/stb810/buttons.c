@@ -13,21 +13,10 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 #include <linux/input.h>
-#include <linux/map_to_7segment.h>
 #include <gpio.h>
 #include <linux/platform_device.h>
-#include <linux/leds.h>
 #include <linux/i2c.h>
 #include <asm/mach-pnx8550/i2c.h>
-
-#define CMD_SET_DIGITS(num) \
-		(0x00 | ((num - 4) & 3))
-#define CMD_SET_MODE(fixedaddr, test) \
-		(0x40 | ((fixedaddr) ? 0x04 : 0x00) | ((test) ? 0x08 : 0x00))
-#define CMD_SET_DISPLAY(enable, brightness) \
-		(0x80 | ((enable) ? 0x08 : 0x00) | ((brightness) & 7))
-#define CMD_SET_ADDR(addr) \
-		(0xC0 | ((addr) & 15))
 
 #define STANDBY_MICRO_BUS  PNX8550_I2C_IP0105_BUS0
 #define STANDBY_MICRO_ADDR 0x30
@@ -250,32 +239,27 @@ static void pnx8550_frontpanel_buttons_callback(struct device *device,
 }
 
 
-static int __devexit pnx8550_frontpanel_buttons_remove(struct platform_device *pdev);
 static int __devinit pnx8550_frontpanel_buttons_probe(struct platform_device *pdev)
 {
 	struct input_dev *input;
 	struct pnx8550_frontpanel_buttons_data *data;
 	int i;
+	int res;
 
 	// create a local copy of the keymap, pretending that there could be
 	// more than a single instance of the driver.
 	data = kzalloc(sizeof(struct pnx8550_frontpanel_buttons_data), GFP_KERNEL);
 	if (!data) {
-		printk(KERN_ERR "PNX8550 frontpanel failed to allocate keymap\n");
-		pnx8550_frontpanel_buttons_remove(pdev);
-		return -ENOMEM;
+		res = -ENOMEM;
+		goto err0;
 	}
 	memcpy(data->keymap, pnx8550_frontpanel_default_keymap,
 			NUM_SCANCODES * sizeof(uint16_t));
-	// set up the input device. if this allocation goes wrong, we'll
-	// need to free the keymap separately.
+	// set up the input device
 	input = input_allocate_device();
 	if (!input) {
-		printk(KERN_ERR
-				"PNX8550 frontpanel failed to allocate input device\n");
-		kfree(data);
-		pnx8550_frontpanel_buttons_remove(pdev);
-		return -ENOMEM;
+		res = -ENOMEM;
+		goto err1;
 	}
 	input_set_drvdata(input, data);
 	platform_set_drvdata(pdev, input);
@@ -289,12 +273,9 @@ static int __devinit pnx8550_frontpanel_buttons_probe(struct platform_device *pd
 	set_bit(EV_KEY, input->evbit);
 	for (i = 0; i < NUM_SCANCODES; i++)
 		set_bit(data->keymap[i], input->keybit);
-	if (input_register_device(input)) {
-		printk(KERN_ERR
-				"PNX8550 frontpanel failed to register input device\n");
-		pnx8550_frontpanel_buttons_remove(pdev);
-		return -EIO;
-	}
+	res = input_register_device(input);
+	if (res)
+		goto err2;
 	// timer init
 	init_timer(&data->timer);
 	data->timer.data = (unsigned long) input;
@@ -303,12 +284,12 @@ static int __devinit pnx8550_frontpanel_buttons_probe(struct platform_device *pd
 	// tell the I²C driver to forward all data from the standby micro to
 	// us. there appears to be no API for doing this cleanly.
 	data->adap = i2c_get_adapter(STANDBY_MICRO_BUS);
-	if (ip0105_set_slave_callback(data->adap, STANDBY_MICRO_ADDR,
-			&pdev->dev, pnx8550_frontpanel_buttons_callback) != 0) {
-		printk(KERN_ERR "PNX8550 frontpanel failed to register callback\n");
-		pnx8550_frontpanel_buttons_remove(pdev);
-		return -EIO;
-	}
+	if (!data->adap)
+		goto err3;
+	res = ip0105_set_slave_callback(data->adap, STANDBY_MICRO_ADDR,
+			&pdev->dev, pnx8550_frontpanel_buttons_callback);
+	if (res)
+		goto err3;
 
 	// set standby pin low. this indicates to the standby micro that we
 	// are ready to start receiving frontpanel button and IR command
@@ -322,8 +303,16 @@ static int __devinit pnx8550_frontpanel_buttons_probe(struct platform_device *pd
 	// finished, because we'd have no way to undo it when we run across
 	// an error afterwards.
 	PNX8550_GPIO_SET_LOW(PNX8550_GPIO_STANDBY);
-
 	return 0;
+
+err3:
+	input_unregister_device(input);
+err2:
+	input_free_device(input);
+err1:
+	kfree(data);
+err0:
+	return res;
 }
 
 static int __devexit pnx8550_frontpanel_buttons_remove(struct platform_device *pdev)
@@ -331,9 +320,12 @@ static int __devexit pnx8550_frontpanel_buttons_remove(struct platform_device *p
 	struct input_dev *input = platform_get_drvdata(pdev);
 	struct pnx8550_frontpanel_buttons_data *data = input_get_drvdata(input);
 
+	// get rid of callback, if registered
 	if (data->adap != NULL)
 		ip0105_set_slave_callback(data->adap, 0, NULL, NULL);
+	// remove input device
 	input_unregister_device(input);
+	input_free_device(input);
 	kfree(data);
 
 	return 0;
@@ -343,7 +335,7 @@ static struct platform_driver pnx8550_frontpanel_buttons_driver = {
 	.probe		= pnx8550_frontpanel_buttons_probe,
 	.remove		= __devexit_p(pnx8550_frontpanel_buttons_remove),
 	.driver		= {
-		.name	= "frontpanel-buttons",
+		.name	= "buttons",
 		.owner	= THIS_MODULE,
 	},
 };
@@ -352,4 +344,4 @@ module_platform_driver(pnx8550_frontpanel_buttons_driver);
 
 MODULE_DESCRIPTION("PNX8550 frontpanel buttons and IR remote control driver");
 MODULE_LICENSE("GPL");
-MODULE_ALIAS("platform:frontpanel-buttons");
+MODULE_ALIAS("platform:buttons");
