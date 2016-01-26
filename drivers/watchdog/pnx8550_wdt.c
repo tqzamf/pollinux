@@ -163,23 +163,18 @@ static int __init pnx8550wdt_init(void)
 	if (request_irq(PNX8550_INT_TIMER3, pnx8550wdt_interrupt, 0,
 			"pnx8550wdt", &pnx8550wdt_dev)) {
 		pr_err("cannot allocate irq %d\n", PNX8550_INT_TIMER3);
-		return -EBUSY;
+		ret = -EBUSY;
+		goto err0;
 	}
 
 	// register watchdog device
 	watchdog_set_nowayout(&pnx8550wdt_dev, nowayout);
 	ret = register_reboot_notifier(&pnx8550wdt_notifier);
-	if (ret) {
-		free_irq(PNX8550_INT_TIMER3, &pnx8550wdt_dev);
-		pr_err("cannot register reboot notifier: %d\n", ret);
-		return ret;
-	}
+	if (ret)
+		goto err1;
 	ret = watchdog_register_device(&pnx8550wdt_dev);
-	if (ret) {
-		free_irq(PNX8550_INT_TIMER3, &pnx8550wdt_dev);
-		unregister_reboot_notifier(&pnx8550wdt_notifier);
-		return ret;
-	}
+	if (ret)
+		goto err2;
 
 	// switch to kernel-based ping and start Counter3
 	pnx8550wdt_switch_to_kernel(&pnx8550wdt_dev);
@@ -190,6 +185,13 @@ static int __init pnx8550wdt_init(void)
 	pr_info("PNX8550 Counter3 Watchdog initialized, timeout=%d\n",
 		pnx8550wdt_dev.timeout);
 	return 0;
+
+err2:
+	unregister_reboot_notifier(&pnx8550wdt_notifier);
+err1:
+	free_irq(PNX8550_INT_TIMER3, &pnx8550wdt_dev);
+err0:
+	return ret;
 }
 
 static void __exit pnx8550wdt_exit(void)
@@ -199,6 +201,7 @@ static void __exit pnx8550wdt_exit(void)
 	configPR = read_c0_config7();
 	configPR |= 0x00000020;
 	write_c0_config7(configPR);
+	// release resources
 	del_timer(&pnx8550wdt_timer);
 	free_irq(PNX8550_INT_TIMER3, &pnx8550wdt_dev);
 	// unregister devices
