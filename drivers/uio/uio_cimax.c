@@ -519,7 +519,6 @@ static void cimax_shutdown(struct platform_device *pdev)
 	cimax_set_irq(&chip->info, 0);
 }
 
-static int __devexit cimax_remove(struct platform_device *pdev);
 static int __devinit cimax_probe(struct platform_device *pdev)
 {
 	unsigned int iobase;
@@ -528,8 +527,8 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 
 	chip = kzalloc(sizeof(struct cimax), GFP_KERNEL);
 	if (!chip) {
-		printk(KERN_ERR "cimax: cannot allocate control structure\n");
-		return -ENOMEM;
+		res = -ENOMEM;
+		goto err0;
 	}
 	chip->info.name = "cimax";
 	chip->info.version = "0.1";
@@ -547,8 +546,8 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 	if (!chip->i2c_adapter) {
 		printk(KERN_ERR "cimax: cannot find i2c bus %d\n",
 				PNX8550_I2C_IP3203_BUS1);
-		cimax_shutdown(pdev);
-		return -ENXIO;
+		res = -ENXIO;
+		goto err1;
 	}
 
 	// configure XIO aperture for CIMaX
@@ -571,43 +570,78 @@ static int __devinit cimax_probe(struct platform_device *pdev)
 	res = cimax_setup(chip);
 	if (res < 0) {
 		printk(KERN_ERR "cimax: cannot initialize chip\n");
-		cimax_shutdown(pdev);
-		return -EIO;
+		goto err2;
 	}
 
 	// create the sysfs files (on the platform device, so relative to the
 	// UIO device, it's in the device/ subdirectory)
-	#define ADD_SYSFS_FILE(name) \
-		res = device_create_file(&pdev->dev, &dev_attr_##name); \
-		if (res) { \
-			printk(KERN_ERR "CIMaX failed to register sysfs file %s\n", \
-					#name); \
-			cimax_shutdown(pdev); \
-			return res; \
-		}
-	ADD_SYSFS_FILE(vcc);
-	ADD_SYSFS_FILE(reset);
-	ADD_SYSFS_FILE(am_timing);
-	ADD_SYSFS_FILE(cm_timing);
-	ADD_SYSFS_FILE(address_space);
-	ADD_SYSFS_FILE(presence);
-	ADD_SYSFS_FILE(irq_status);
+	res = device_create_file(&pdev->dev, &dev_attr_vcc);
+	if (res) goto err2;
+	res = device_create_file(&pdev->dev, &dev_attr_reset);
+	if (res) goto err3;
+	res = device_create_file(&pdev->dev, &dev_attr_am_timing);
+	if (res) goto err4;
+	res = device_create_file(&pdev->dev, &dev_attr_cm_timing);
+	if (res) goto err5;
+	res = device_create_file(&pdev->dev, &dev_attr_address_space);
+	if (res) goto err6;
+	res = device_create_file(&pdev->dev, &dev_attr_presence);
+	if (res) goto err7;
+	res = device_create_file(&pdev->dev, &dev_attr_irq_status);
+	if (res) goto err8;
 
 	// register as UIO device
 	res = uio_register_device(&pdev->dev, &chip->info);
 	if (res) {
 		printk(KERN_ERR "CIMaX failed to create UIO device\n");
-		cimax_shutdown(pdev);
-		return res;
+		goto err9;
 	}
 	printk(KERN_INFO "CIMaX at %08x, i2c address %02x, irq %d\n",
 			iobase, chip->i2c_addr, (int) chip->info.irq);
 	return 0;
+
+err9:
+	device_remove_file(&pdev->dev, &dev_attr_irq_status);
+err8:
+	device_remove_file(&pdev->dev, &dev_attr_presence);
+err7:
+	device_remove_file(&pdev->dev, &dev_attr_address_space);
+err6:
+	device_remove_file(&pdev->dev, &dev_attr_cm_timing);
+err5:
+	device_remove_file(&pdev->dev, &dev_attr_am_timing);
+err4:
+	device_remove_file(&pdev->dev, &dev_attr_reset);
+err3:
+	device_remove_file(&pdev->dev, &dev_attr_vcc);
+err2:
+	cimax_shutdown(pdev);
+err1:
+	kfree(chip);
+err0:
+	return res;
 }
 
 static int __devexit cimax_remove(struct platform_device *pdev)
 {
+	struct cimax *chip = platform_get_drvdata(pdev);
+
+	// unregister UIO device and sysfs files
+	uio_unregister_device(&chip->info);
+	device_remove_file(&pdev->dev, &dev_attr_vcc);
+	device_remove_file(&pdev->dev, &dev_attr_reset);
+	device_remove_file(&pdev->dev, &dev_attr_am_timing);
+	device_remove_file(&pdev->dev, &dev_attr_cm_timing);
+	device_remove_file(&pdev->dev, &dev_attr_address_space);
+	device_remove_file(&pdev->dev, &dev_attr_presence);
+	device_remove_file(&pdev->dev, &dev_attr_irq_status);
+
+	// put hardware into shutdown mode
 	cimax_shutdown(pdev);
+
+	// release memory
+	kfree(chip);
+
 	return 0;
 }
 
