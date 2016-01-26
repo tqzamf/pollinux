@@ -115,12 +115,12 @@ static int __devinit snd_pnx8550ao1_new_mixer(struct snd_pnx8550ao1 *chip)
 	
 	err = snd_ctl_add(chip->card,
 			  snd_ctl_new1(&pnx8550ao1_ctrl_volume, chip));
-	if (!err) {
-		chip->volume = AK4705_VOL_DEFAULT;
-		ak4705_set_volume(chip->volume);
-	}
+	if (err)
+		return err;
 	
-	return err;
+	chip->volume = AK4705_VOL_DEFAULT;
+	ak4705_set_volume(chip->volume);
+	return 0;
 }
 
 static irqreturn_t snd_pnx8550ao1_isr(int irq, void *dev_id)
@@ -253,10 +253,8 @@ static int snd_pnx8550ao1_mmap(struct snd_pcm_substream *substream,
 		return -EINVAL; /* end is out of range */
 	
 	vma->vm_flags |= VM_DONTEXPAND;
-	if (remap_pfn_range(vma, vma->vm_start, pgstart, vsize,
-			    pgprot_noncached(vma->vm_page_prot)))
-		return -EAGAIN;
-	return 0;
+	return remap_pfn_range(vma, vma->vm_start, pgstart, vsize,
+			    pgprot_noncached(vma->vm_page_prot));
 }
 
 static int snd_pnx8550ao1_prepare(struct snd_pcm_substream *substream)
@@ -425,9 +423,8 @@ static int snd_pnx8550ao1_free(struct snd_pnx8550ao1 *chip)
 	PNX8550_AO_CTL = PNX8550_AO_UDR | PNX8550_AO_BUF1 | PNX8550_AO_BUF2
 			| PNX8550_AO_HBE;
 	
-	/* release IRQ */
+	/* release IRQ and buffers */
 	free_irq(PNX8550_AO_IRQ, chip);
-
 	dma_free_coherent(NULL, PNX8550_AO_BUF_ALLOC, chip->buffer,
 			chip->buf_dma);
 
@@ -456,8 +453,10 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	*rchip = NULL;
 
 	chip = kzalloc(sizeof(struct snd_pnx8550ao1), GFP_KERNEL);
-	if (chip == NULL)
-		return -ENOMEM;
+	if (chip == NULL) {
+		err = -ENOMEM;
+		goto err0;
+	}
 	chip->card = card;
 
 	/* allocate DMA-capable buffers */
@@ -467,7 +466,7 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 		printk(KERN_ERR
 		       "pnx8550ao1: could not allocate ring buffers\n");
 		kfree(chip);
-		return -ENOMEM;
+		goto err1;
 	}
 
 	/* clear and disable interrupts, and disable transmission, so the
@@ -476,12 +475,12 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 			| PNX8550_AO_HBE;
 
 	/* allocate IRQ */
-	if (request_irq(PNX8550_AO_IRQ, snd_pnx8550ao1_isr, 0,
-			"pnx8550ao1", chip)) {
-		snd_pnx8550ao1_free(chip);
+	err = request_irq(PNX8550_AO_IRQ, snd_pnx8550ao1_isr, 0, "pnx8550ao1",
+			chip);
+	if (err) {
 		printk(KERN_ERR "pnx8550ao1: cannot allocate irq %d\n",
 			   PNX8550_AO_IRQ);
-		return -EBUSY;
+		goto err2;
 	}
 
 	/* configure and start the clocks */
@@ -505,12 +504,24 @@ static int __devinit snd_pnx8550ao1_create(struct snd_card *card,
 	PNX8550_AO_CTL = chip->control;
 	
 	err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops);
-	if (err < 0) {
-		snd_pnx8550ao1_free(chip);
-		return err;
-	}
+	if (err < 0)
+		goto err3;
 	*rchip = chip;
 	return 0;
+
+err3:
+	/* clear and disable interrupts, and disable transmission. this shuts
+	 * down the hardware far enough that it's harmless. */
+	PNX8550_AO_CTL = PNX8550_AO_UDR | PNX8550_AO_BUF1 | PNX8550_AO_BUF2
+			| PNX8550_AO_HBE;
+	free_irq(PNX8550_AO_IRQ, chip);
+err2:
+	dma_free_coherent(NULL, PNX8550_AO_BUF_ALLOC, chip->buffer,
+			chip->buf_dma);
+err1:
+	kfree(chip);
+err0:
+	return err;
 }
 
 static int __devinit snd_pnx8550ao1_probe(struct platform_device *pdev)

@@ -421,6 +421,7 @@ static int snd_pnx8550spdo_free(struct snd_pnx8550spdo *chip)
 {
 	/* disable interrupts and stop transmission */
 	PNX8550_SPDO_CTL = 0;
+	PNX8550_SPDO_BCLK_CTL = 0;
 
 	/* release IRQ */
 	free_irq(PNX8550_SPDO_IRQ, chip);
@@ -450,17 +451,19 @@ static int __devinit snd_pnx8550spdo_create(struct snd_card *card,
 	*rchip = NULL;
 
 	chip = kzalloc(sizeof(struct snd_pnx8550spdo), GFP_KERNEL);
-	if (chip == NULL)
-		return -ENOMEM;
+	if (chip == NULL) {
+		err = -ENOMEM;
+		goto err0;
+	}
 	chip->card = card;
 
 	/* allocate IRQ */
-	if (request_irq(PNX8550_SPDO_IRQ, snd_pnx8550spdo_isr, 0,
-			"pnx8550spdo", chip)) {
-		snd_pnx8550spdo_free(chip);
+	err = request_irq(PNX8550_SPDO_IRQ, snd_pnx8550spdo_isr, 0,
+			"pnx8550spdo", chip);
+	if (err) {
 		printk(KERN_ERR "pnx8550spdo: cannot allocate irq %d\n",
 			   PNX8550_SPDO_IRQ);
-		return -EBUSY;
+		goto err1;
 	}
 
 	/* configure and start the clock */
@@ -470,10 +473,21 @@ static int __devinit snd_pnx8550spdo_create(struct snd_card *card,
 	err = snd_device_new(card, SNDRV_DEV_LOWLEVEL, chip, &ops);
 	if (err < 0) {
 		snd_pnx8550spdo_free(chip);
-		return err;
+		goto err2;
 	}
 	*rchip = chip;
 	return 0;
+
+err2:
+	/* disable interrupts, stop transmission, disable clock. this shuts down
+	 * the hardware far enough that it's harmless. */
+	PNX8550_SPDO_CTL = 0;
+	PNX8550_SPDO_BCLK_CTL = 0;
+	free_irq(PNX8550_SPDO_IRQ, chip);
+err1:
+	kfree(chip);
+err0:
+	return err;
 }
 
 static int __devinit snd_pnx8550spdo_probe(struct platform_device *pdev)
