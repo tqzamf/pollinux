@@ -459,7 +459,7 @@ static void pnx8550fb_set_layers_enabled(struct pnx8550fb_par *par,
 		bool enabled)
 {
 	int layer;
-	
+
 	if (!enabled) {
 		// disable all implemented layers, just in case.
 		for (layer = qvcp_get_reg(par, 0x018) & 7; layer > 0; layer--)
@@ -549,7 +549,7 @@ static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
 	// wait for clocks to come up. the I²C transactions will time out if
 	// the clocks to the PNX8510 aren't yet available.
 	udelay(300);
-	
+
     // make sure the ANABEL clocks are enabled
     anabel_clock_set_reg(par, 0x01, 0x00);
     switch (par->std) {
@@ -643,7 +643,7 @@ static void pnx8550fb_init_layer(struct pnx8550fb_par *par, int layer)
 static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 {
 	int layer;
-	
+
 	// disable all layers during init
 	pnx8550fb_set_layers_enabled(par, false);
 
@@ -741,7 +741,7 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 		qvcp_set_reg(par, 0x23c, 0x20);
 		break;
 	}
-	
+
 	// set layer base address(es) and size(s)
 	switch (par->std) {
 	case STD_FAKEHD:
@@ -937,7 +937,7 @@ static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_
 
 	v = (red >> 8 << 16) | (green >> 8 << 8) | (blue >> 8 << 0);
 	((u32 *) (info->pseudo_palette))[regno] = v;
-	
+
 	return 0;
 }
 
@@ -952,24 +952,24 @@ static int pnx8550_framebuffer_blank(int blank, struct fb_info *info)
 static void calc_offsets(int *res, int *left, int *right, int vres)
 {
 	int rem, rem_left;
-	
+
 	// clamp to physical resolution, and don't allow screens which are
 	// too small.
 	if (*res > vres)
 		*res = vres;
 	if (*res < vres / 2)
 		*res = vres / 2;
-	
+
 	// remaining number of pixels. ≥0 if pixels are left over; <0 if
 	// margins are too wide.
 	rem = vres - *res - *left - *right;
-	
+
 	// add half the remaining pixels to left, and the rest to the right.
 	// if rem ≥ 0, this makes the margins larger, else smaller.
 	rem_left = rem / 2;
 	*left += rem_left;
 	*right += rem - rem_left;
-	
+
 	// if rem < 0, one of the margins may have become negative. if so,
 	// set it to zero and enlarge the opposite margin to compensate.
 	if (*left < 0) {
@@ -991,12 +991,12 @@ static int pnx8550fb_check_var(struct fb_var_screeninfo *var,
 	par->left = var->left_margin;
 	par->right = var->right_margin;
 	calc_offsets(&par->xres, &par->left, &par->right, def.xres_virtual);
-	
+
 	par->yres = var->yres;
 	par->upper = var->upper_margin;
 	par->lower = var->lower_margin;
 	calc_offsets(&par->yres, &par->upper, &par->lower, def.yres_virtual);
-	
+
 	// we only support the default config, with slight modifications
 	*var = def;
 	// apply calculated sizes and margins
@@ -1014,7 +1014,7 @@ static int pnx8550fb_resize(struct fb_info *info, int init)
 {
 	struct pnx8550fb_par *par = info->par;
 	int start_offset, end_offset;
-	
+
 	if (par->std != std) {
 		// if standard has changed, re-initialize the display. this
 		// involves completely shutting it down and starting it up again
@@ -1036,7 +1036,7 @@ static int pnx8550fb_resize(struct fb_info *info, int init)
 	// pixels included in that.
 	start_offset = fix.line_length * par->upper + sizeof(int) * par->left;
 	end_offset = fix.line_length * par->lower + sizeof(int) * par->right;
-	
+
 	// set base address to move the start of the screen
 	if (!init)
 		mutex_lock(&info->mm_lock);
@@ -1059,6 +1059,7 @@ static int pnx8550fb_set_par(struct fb_info *info)
 }
 
 static struct fb_ops ops = {
+	.owner = THIS_MODULE,
 	.fb_setcolreg	= pnx8550_framebuffer_setcolreg,
 	.fb_blank       = pnx8550_framebuffer_blank,
 	.fb_check_var   = pnx8550fb_check_var,
@@ -1068,7 +1069,6 @@ static struct fb_ops ops = {
 	.fb_imageblit	= sys_imageblit,
 };
 
-static int pnx8550_framebuffer_remove(struct platform_device *dev);
 static int pnx8550_framebuffer_probe(struct platform_device *dev)
 {
 	int retval = -ENOMEM;
@@ -1077,36 +1077,34 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	dma_addr_t fb_base;
 	void *fb_ptr;
 	char *standard;
-	
+
 	info = framebuffer_alloc(sizeof(struct pnx8550fb_par)
 			+ sizeof(u32) * PNX8550FB_PSEUDO_PALETTE_SIZE, &dev->dev);
 	if (!info) {
 		printk(KERN_ERR "pnx8550fb failed to allocate device\n");
-		pnx8550_framebuffer_remove(dev);
-		return 1;
+		goto err0;
 	}
+	platform_set_drvdata(dev, info);
 	par = info->par;
 	par->base = NULL;
 	par->filterlayer = 0;
 
-	fb_ptr = dma_alloc_noncoherent(&dev->dev, PNX8550FB_SIZE,
-					&fb_base, GFP_USER);
+	fb_ptr = dma_alloc_noncoherent(&dev->dev, PNX8550FB_SIZE, &fb_base,
+			GFP_USER);
 	if (!fb_ptr) {
 		printk(KERN_ERR "pnx8550fb failed to allocate screen memory\n");
-		pnx8550_framebuffer_remove(dev);
-		return 1;
+		goto err1;
 	}
 	par->iobase = fb_base;
 	par->base = fb_ptr;
 	par->size = PNX8550FB_SIZE;
 	par->std = STD_UNDEFINED;
-	
+
 	par->filterlayer = dma_map_single(&dev->dev, pnx8550fb_filterlayer,
 			sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
 	if (dma_mapping_error(&dev->dev, par->filterlayer)) {
-		printk(KERN_ERR "pnx8550fb failed to map fake HD filter layer\n");
-		pnx8550_framebuffer_remove(dev);
-		return 1;
+		printk(KERN_ERR "pnx8550fb failed to map fakeHD filter layer\n");
+		goto err2;
 	}
 	// hardware setup. should probably be defined in the platform_device
 	// instead of being hardcoded.
@@ -1132,10 +1130,9 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	pnx8550fb_resize(info, 1);
 
 	retval = register_framebuffer(info);
-	if (retval < 0) {
+	if (retval) {
 		printk(KERN_ERR "pnx8550fb failed to register: %d\n", retval);
-		pnx8550_framebuffer_remove(dev);
-		return 1;
+		goto err3;
 	}
 
 	switch (par->std) {
@@ -1146,7 +1143,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 		standard = "NTSC";
 		break;
 	case STD_FAKEHD:
-		standard = "fake HD";
+		standard = "fakeHD";
 		break;
 	default:
 		standard = "unknown";
@@ -1156,36 +1153,46 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 			info->node, standard, (unsigned int) fb_base,
 			(unsigned int) fb_ptr);
 	return 0;
+
+err3:
+	pnx8550fb_shutdown_display(info->par);
+	dma_unmap_single(&dev->dev, par->filterlayer,
+			sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
+err2:
+	dma_free_noncoherent(&dev->dev, PNX8550FB_SIZE, par->base, GFP_USER);
+err1:
+	framebuffer_release(info);
+err0:
+	return retval;
 }
 
 static void pnx8550_framebuffer_shutdown(struct platform_device *dev)
 {
 	struct fb_info *info = platform_get_drvdata(dev);
-
-	if (info)
-		pnx8550fb_shutdown_display(info->par);
+	pnx8550fb_shutdown_display(info->par);
 }
 
 static int pnx8550_framebuffer_remove(struct platform_device *dev)
 {
-	struct pnx8550fb_par *par;
 	struct fb_info *info = platform_get_drvdata(dev);
+	struct pnx8550fb_par *par = info->par;
+	int res;
 
-	if (info) {
-		par = info->par;
-
-		pnx8550_framebuffer_shutdown(dev);
-		if (par->base)
-			dma_free_noncoherent(&dev->dev, PNX8550FB_SIZE,
-					par->base, GFP_USER);
-		if (par->filterlayer)
-			dma_unmap_single(&dev->dev, par->filterlayer,
-				sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
-
-
-		unregister_framebuffer(info);
-		framebuffer_release(info);
+	// remove device. if this fails, the module cannot be unloaded.
+	res = unregister_framebuffer(info);
+	if (res) {
+		printk("pnx8550fb failed to unregister: %d\n", res);
+		return res;
 	}
+
+	// shutdown the hardware
+	pnx8550fb_shutdown_display(par);
+
+	// release memory
+	dma_free_noncoherent(&dev->dev, PNX8550FB_SIZE, par->base, GFP_USER);
+	dma_unmap_single(&dev->dev, par->filterlayer,
+			sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
+	framebuffer_release(info);
 	return 0;
 }
 
@@ -1241,7 +1248,13 @@ static int __init pnx8550_framebuffer_init(void)
 	return platform_driver_register(&pnx8550_framebuffer_driver);
 }
 
+static void __exit pnx8550_framebuffer_exit(void)
+{
+	platform_driver_unregister(&pnx8550_framebuffer_driver);
+}
+
 module_init(pnx8550_framebuffer_init);
+module_exit(pnx8550_framebuffer_exit);
 
 MODULE_AUTHOR("Matthias <tqzamf@gmail.com>");
 MODULE_DESCRIPTION("PNX8550 STB810 framebuffer driver");
