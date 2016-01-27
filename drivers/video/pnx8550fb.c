@@ -1,6 +1,6 @@
 /*
  *  PNX8550 framebuffer driver.
- * 
+ *
  *  (Derived from the virtual frame buffer device.)
  *
  *      Copyright (C) 2002 James Simmons
@@ -24,6 +24,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/fb.h>
 #include <linux/init.h>
+#include <linux/ctype.h>
 
 #include <framebuffer.h>
 #include <ak4705.h>
@@ -36,10 +37,12 @@
 #define I2C_ANABEL_CLOCK_ADDR          0x76
 
 enum standard {
-	STD_UNDEFINED = 0,
-	STD_PAL,
-	STD_NTSC,
-	STD_FAKEHD,
+	STD_KEEP = -1,
+	STD_UNSET = 0,
+	STD_PAL = 1,
+	STD_NTSC = 2,
+	STD_FAKEHD = 3,
+	STD_DEFAULT = STD_PAL,
 };
 
 struct pnx8550fb_par {
@@ -840,20 +843,28 @@ static struct fb_var_screeninfo def = {
 	.sync =           FB_SYNC_BROADCAST,
 };
 
-enum standard std = STD_UNDEFINED;
+static enum standard std = STD_DEFAULT;
+static short stdwidth = -1;
+static short stdheight = -1;
 
-static int pnx8550fb_standard_set(const char *val,
-		const struct kernel_param *kp)
+static void pnx8550fb_standard_apply(enum standard newstd, int width, int height)
 {
-	int n;
+	// switch to new standard, if requested. this defaults to resetting sizes,
+	// unless they are specified as well.
+	if (newstd != STD_KEEP) {
+		std = newstd;
+		stdwidth = -1;
+		stdheight = -1;
+	}
+	// update default sizes
+	if (width > 0)
+		stdwidth = width;
+	if (height > 0)
+		stdheight = height;
 
-	// skip newlines (can happen when writing the sysfs file)
-	n = strlen(val);
-	if (n > 0 && val[n - 1] == '\n')
-		n--;
-
-	if (!strncasecmp(val, "fakehd", n)) {
-		std = STD_FAKEHD;
+	// update screen / raster parameters
+	switch (std) {
+	case STD_FAKEHD:
 		def.yres_virtual = PNX8550FB_HEIGHT_FAKEHD;
 		def.xres_virtual = PNX8550FB_WIDTH_FAKEHD;
 		def.upper_margin = PNX8550FB_MARGIN_UPPER_FAKEHD;
@@ -864,9 +875,8 @@ static int pnx8550fb_standard_set(const char *val,
 		def.hsync_len = PNX8550FB_HSYNC_FAKEHD;
 		def.pixclock = PNX8550FB_PIXCLOCK_FAKEHD;
 		def.vmode = FB_VMODE_INTERLACED;
-	} else if (!strncasecmp(val, "pal", n)
-			|| !strncasecmp(val, "default", n)) {
-		std = STD_PAL;
+		break;
+	case STD_PAL:
 		def.yres_virtual = PNX8550FB_HEIGHT_PAL;
 		def.xres_virtual = PNX8550FB_WIDTH_SD;
 		def.upper_margin = PNX8550FB_MARGIN_UPPER_PAL;
@@ -877,8 +887,8 @@ static int pnx8550fb_standard_set(const char *val,
 		def.hsync_len = PNX8550FB_HSYNC_PAL;
 		def.pixclock = PNX8550FB_PIXCLOCK_SD;
 		def.vmode = FB_VMODE_INTERLACED;
-	} else if (!strncasecmp(val, "ntsc", n)) {
-		std = STD_NTSC;
+		break;
+	case STD_NTSC:
 		def.yres_virtual = PNX8550FB_HEIGHT_NTSC;
 		def.xres_virtual = PNX8550FB_WIDTH_SD;
 		def.upper_margin = PNX8550FB_MARGIN_UPPER_NTSC;
@@ -889,32 +899,126 @@ static int pnx8550fb_standard_set(const char *val,
 		def.hsync_len = PNX8550FB_HSYNC_NTSC;
 		def.pixclock = PNX8550FB_PIXCLOCK_SD;
 		def.vmode = FB_VMODE_INTERLACED;
-	} else
-		return -EINVAL;
+		break;
+	default:
+		// that should never happen: unsupported standard selected!
+		BUG();
+	}
 
 	// (re)calculate default sizes
-	def.xres = def.xres_virtual - def.left_margin - def.right_margin;
-	def.yres = def.yres_virtual - def.upper_margin - def.lower_margin;
+	if (stdwidth <= 0)
+		def.xres = def.xres_virtual - def.left_margin - def.right_margin;
+	else
+		def.xres = stdwidth;
+	if (stdheight <= 0)
+		def.yres = def.yres_virtual - def.upper_margin - def.lower_margin;
+	else
+		def.yres = stdheight;
+}
+
+static int pnx8550fb_standard_set(const char *val,
+		const struct kernel_param *kp)
+{
+	enum standard new_std = STD_KEEP;
+	int width = -1, height = -1;
+	const char *widthstr, *heightstr;
+	char buffer[5];
+	unsigned long result;
+	int n;
+
+	// strip newline (when writing the sysfs file)
+	n = strlen(val);
+	if (n > 0 && val[n - 1] == '\n')
+		n--;
+
+	// format: [pal|ntsc|fakehd][WIDTH][xHEIGHT]
+	if (!strncasecmp(val, "default", 7)) {
+		new_std = STD_DEFAULT;
+		val += 7;
+	} else if (!strncasecmp(val, "ntsc", 4)) {
+		new_std = STD_NTSC;
+		val += 4;
+	} else if (!strncasecmp(val, "pal", 3)) {
+		new_std = STD_PAL;
+		val += 3;
+	} else if (!strncasecmp(val, "fakehd", 6)) {
+		new_std = STD_FAKEHD;
+		val += 6;
+	}
+
+	// skip field-separating whitespace (from sysfs writes only)
+	while (isspace(*val))
+		val++;
+
+	// parse (possibly partial) size: find the "x" (case-insensitively)
+	for (n = 0; val[n]; n++)
+		if (tolower(val[n]) == 'x')
+			break;
+
+	if (val[n]) {
+		// we found an "x". split the fields, copying width to a temporary
+		// buffer. if it's too long, then that's because it's too large,
+		// ie. out of range.
+		if (n + 1 > sizeof(buffer))
+			return -ERANGE;
+		strlcpy(buffer, val, n + 1);
+		widthstr = buffer;
+		heightstr = &val[n + 1];
+	} else {
+		// no "x" in string, ie. only width present.
+		widthstr = val;
+		heightstr = NULL;
+	}
+
+	// parse width and height. range checking isn't strict but the code can
+	// handle somewhat out-of-spec values, just not wildly strange ones.
+	if (heightstr && *heightstr) {
+		if (kstrtol(heightstr, 10, &result))
+			return -EINVAL;
+		if (result <= 0 || result > PNX8550FB_HEIGHT_FAKEHD)
+			return -ERANGE;
+		height = result;
+	}
+	if (widthstr && *widthstr) {
+		if (kstrtol(widthstr, 10, &result))
+			return -EINVAL;
+		if (result <= 0 || result > PNX8550FB_WIDTH_FAKEHD)
+			return -ERANGE;
+		width = result;
+	}
+
+	// apply settings, changing what isn't set to -1
+	pnx8550fb_standard_apply(new_std, width, height);
 	return 0;
 }
 
 static int pnx8550fb_standard_get(char *buffer,
 		const struct kernel_param *kp)
 {
+	int n;
+
 	switch (std) {
 	case STD_NTSC:
-		strcpy(buffer, "ntsc");
+		strcpy(buffer, "NTSC");
 		break;
 	case STD_PAL:
-		strcpy(buffer, "pal");
+		strcpy(buffer, "PAL");
 		break;
 	case STD_FAKEHD:
-		strcpy(buffer, "fakehd");
+		strcpy(buffer, "fakeHD");
 		break;
 	default:
-		sprintf(buffer, "%d", std);
+		sprintf(buffer, "#%d", std);
 		break;
 	}
+
+	n = strlen(buffer);
+	if (stdwidth > 0 && stdheight > 0)
+		sprintf(&buffer[n], " %dx%d", stdwidth, stdheight);
+	else if (stdwidth > 0)
+		sprintf(&buffer[n], " %dx", stdwidth);
+	else if (stdheight > 0)
+		sprintf(&buffer[n], " x%d", stdheight);
 	return strlen(buffer);
 }
 
@@ -1098,7 +1202,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	par->iobase = fb_base;
 	par->base = fb_ptr;
 	par->size = PNX8550FB_SIZE;
-	par->std = STD_UNDEFINED;
+	par->std = STD_UNSET;
 
 	par->filterlayer = dma_map_single(&dev->dev, pnx8550fb_filterlayer,
 			sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
@@ -1207,43 +1311,20 @@ static struct platform_driver pnx8550_framebuffer_driver = {
 
 static int __init pnx8550_framebuffer_init(void)
 {
-	unsigned long res;
-	char *option = NULL, *rest;
+#ifndef MODULE
+	char *option = NULL;
+#endif
 
+	// apply standard so that screen parameters are valid. required if
+	// standard isn't set by module parameter.
+	pnx8550fb_standard_apply(STD_KEEP, -1, -1);
+
+#ifndef MODULE
 	if (fb_get_options("pnx8550fb", &option))
 		return -ENODEV;
-	
-	// format: [pal|ntsc][WIDTH][xHEIGHT]
-	if (option) {
-		// set standard if given. this overrides the module parameter...
-		if (!strncasecmp(option, "ntsc", 4)) {
-			pnx8550fb_standard_set("ntsc", NULL);
-			option += 4;
-		} else if (!strncasecmp(option, "pal", 3)) {
-			pnx8550fb_standard_set("pal", NULL);
-			option += 3;
-		} else if (!strncasecmp(option, "fakehd", 6)) {
-			pnx8550fb_standard_set("fakehd", NULL);
-			option += 6;
-		} else if (std == STD_UNDEFINED)
-			// pick default standard only if none selected by module param
-			pnx8550fb_standard_set("default", NULL);
-
-		// parse (possibly partial) sizes and apply
-		rest = strchr(option, 'x');
-		if (!rest)
-			rest = strchr(option, 'X');
-		if (rest) {
-			*rest = 0;
-			rest++;
-			if (!kstrtol(rest, 10, &res))
-				def.yres = res;
-			*rest = 'x';
-		}
-		if (!kstrtol(option, 10, &res))
-			def.xres = res;
-	} else if (std == STD_UNDEFINED)
-		pnx8550fb_standard_set("default", NULL);
+	if (option)
+		pnx8550fb_standard_set(option);
+#endif
 
 	return platform_driver_register(&pnx8550_framebuffer_driver);
 }
