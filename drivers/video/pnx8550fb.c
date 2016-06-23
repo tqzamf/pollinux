@@ -69,13 +69,13 @@ struct pnx8550fb_par {
 };
 
 // filter layer width in pixels
-#define PNX8550FB_FILTERLAYER_WIDTH 2
+#define PNX8550FB_FILTERLAYER_WIDTH 4
 // filter layer width in bytes; has to be a multiple of 8.
 #define PNX8550FB_FILTERLAYER_STRIDE \
-	(PNX8550FB_FILTERLAYER_WIDTH * sizeof(uint32_t))
-static uint32_t pnx8550fb_filterlayer[1080 * PNX8550FB_FILTERLAYER_WIDTH]
+	(PNX8550FB_FILTERLAYER_WIDTH * sizeof(uint16_t))
+static uint16_t pnx8550fb_filterlayer[1080 * PNX8550FB_FILTERLAYER_WIDTH]
 		__aligned(8) = {
-#define _LINE(x) (x) << 24, (x) << 24,
+#define _LINE(x) (x) << 8, (x) << 8, (x) << 8, (x) << 8,
 #define _BLOCK _LINE(0) _LINE(127) _LINE(255) _LINE(255) _LINE(127) _LINE(0)
 	// 180 6-line blocks for 1080 lines total
 #define _5BLOCKS _BLOCK _BLOCK _BLOCK _BLOCK _BLOCK
@@ -618,10 +618,10 @@ static void pnx8550fb_init_layer(struct pnx8550fb_par *par, int layer)
 	qvcp_set_reg(par, base + 0x06c, 0x0);
 	qvcp_set_reg(par, base + 0x07c, 0x0);
 	qvcp_set_reg(par, base + 0x08c, 0x0);
-	// color mode = ARGB 8888
+	// color mode = RGB 565 (16-bit), with alpha in phantom upper 16 bits
 	qvcp_set_reg(par, base + 0x038, 0x0);
-	qvcp_set_reg(par, base + 0x0bc, 0xec);
-	qvcp_set_reg(par, base + 0x0c4, 0xffe7eff7);
+	qvcp_set_reg(par, base + 0x0bc, 0xac);
+	qvcp_set_reg(par, base + 0x0c4, 0xff84aa8f);
 	// brightness / contrast / gamma
 	qvcp_set_reg(par, base + 0x0cc, 0x100f100);
 	// disable alpha blending by default (actually enables it and uses a
@@ -720,9 +720,11 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 		// 720 lines in, 1080 lines out, ie. scale by 1.5 vertically.
 		qvcp_set_reg(par, 0x220, 0x0000aaaa);
 		qvcp_set_reg(par, 0x23c, 0x20);
-		// filtering layer; width is really just 2 pixels
+		// filtering layer. data width is just 4 16-bit pixels for minimal
+		// 8-byte alignment; hardware repeats the last (ie. the fourth)
+		// pixel until the line is complete.
 		qvcp_set_reg(par, 0x430, 0x00800014);
-		qvcp_set_reg(par, 0x434, 0x021c0002);
+		qvcp_set_reg(par, 0x434, 0x021c0004);
 		qvcp_set_reg(par, 0x43c, 0x20);
 		// secondary display layer. starts 1 line furter up, so it has to
 		// start in "the other" field, and also inherits alpha from the
@@ -755,8 +757,9 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 		qvcp_set_reg(par, 0x210, 2 * PNX8550FB_STRIDE);
 		qvcp_set_reg(par, 0x208, PNX8550FB_LINE_SIZE_FAKEHD);
 		qvcp_set_reg(par, 0x2b4, PNX8550FB_WIDTH_FAKEHD);
-		// filtering pseudo-layer, scaled horizontally to match screen width
-		qvcp_set_reg(par, 0x4a8, 0x00000000);
+		// filtering pseudo-layer; special 8+8 alpha + gray format. last pixel
+		// repeated horizontally to fill screen width.
+		qvcp_set_reg(par, 0x4c4, 0xefe7e7e7);
 		qvcp_set_reg(par, 0x400, par->filterlayer + PNX8550FB_FILTERLAYER_STRIDE);
 		qvcp_set_reg(par, 0x40c, par->filterlayer);
 		qvcp_set_reg(par, 0x404, 2 * PNX8550FB_FILTERLAYER_STRIDE);
@@ -833,10 +836,10 @@ static struct fb_fix_screeninfo fix = {
 };
 
 static struct fb_var_screeninfo def = {
-	.bits_per_pixel = 32,
-	.red =            { 16, 8, 0 },
-	.green =          { 8,  8, 0 },
-	.blue =           { 0,  8, 0 },
+	.bits_per_pixel = 16,
+	.red =            { 11, 5, 0 },
+	.green =          { 5,  6, 0 },
+	.blue =           { 0,  5, 0 },
 	.activate =       FB_ACTIVATE_NOW,
 	.height =         -1,
 	.width =          -1,
@@ -1039,7 +1042,7 @@ static int pnx8550_framebuffer_setcolreg(u_int regno, u_int red, u_int green, u_
 	if (regno >= PNX8550FB_PSEUDO_PALETTE_SIZE)
 		return 1;
 
-	v = (red >> 8 << 16) | (green >> 8 << 8) | (blue >> 8 << 0);
+	v = (red >> (16-5) << (5+6)) | (green >> (16-6) << 5) | (blue >> (16-5) << 0);
 	((u32 *) (info->pseudo_palette))[regno] = v;
 
 	return 0;
@@ -1138,8 +1141,8 @@ static int pnx8550fb_resize(struct fb_info *info, int init)
 	// aren't painted over. the stride stays the same because each line
 	// is still as wide as it used to be, only now there are some unused
 	// pixels included in that.
-	start_offset = fix.line_length * par->upper + sizeof(int) * par->left;
-	end_offset = fix.line_length * par->lower + sizeof(int) * par->right;
+	start_offset = fix.line_length * par->upper + PNX8550FB_PIXEL * par->left;
+	end_offset = fix.line_length * par->lower + PNX8550FB_PIXEL * par->right;
 
 	// set base address to move the start of the screen
 	if (!init)

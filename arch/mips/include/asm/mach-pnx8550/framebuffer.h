@@ -11,8 +11,8 @@
 #define PNX8550FB_PSEUDO_PALETTE_SIZE     16
 
 /* Macros defining the frame buffer display attributes.
- * Maximum size is exactly the 3600k required by the HD framebuffer.
- * This wastes 2250k for NTSC and 1980k for PAL, but is easier than
+ * Maximum size is exactly the 1800k required by the HD framebuffer.
+ * This wastes 1125k for NTSC and 990k for PAL, but is easier than
  * reallocating the framebuffer when the video standard changes. */
 #define PNX8550FB_HEIGHT_PAL     576
 #define PNX8550FB_HEIGHT_NTSC    480
@@ -33,7 +33,8 @@
 #define PNX8550FB_MARGIN_RIGHT_SD     40
 #define PNX8550FB_MARGIN_LEFT_FAKEHD  32
 #define PNX8550FB_MARGIN_RIGHT_FAKEHD 32
-#define PNX8550FB_STRIDE         (PNX8550FB_WIDTH_FAKEHD * sizeof(int))
+#define PNX8550FB_PIXEL          (sizeof(uint16_t))
+#define PNX8550FB_STRIDE         (PNX8550FB_WIDTH_FAKEHD * PNX8550FB_PIXEL)
 #define PNX8550FB_HSYNC_PAL      144
 #define PNX8550FB_VSYNC_PAL      49
 #define PNX8550FB_HSYNC_NTSC     138
@@ -42,8 +43,8 @@
 #define PNX8550FB_VSYNC_FAKEHD   405 /* most of that is actually repeated video lines, not sync */
 #define PNX8550FB_PIXCLOCK_SD      74074 /* 13.5MHz */
 #define PNX8550FB_PIXCLOCK_FAKEHD  20202 /* 49.5MHz */
-#define PNX8550FB_LINE_SIZE_SD     (PNX8550FB_WIDTH_SD * sizeof(int))
-#define PNX8550FB_LINE_SIZE_FAKEHD (PNX8550FB_WIDTH_FAKEHD * sizeof(int))
+#define PNX8550FB_LINE_SIZE_SD     (PNX8550FB_WIDTH_SD * PNX8550FB_PIXEL)
+#define PNX8550FB_LINE_SIZE_FAKEHD (PNX8550FB_WIDTH_FAKEHD * PNX8550FB_PIXEL)
 #define PNX8550FB_SIZE             (PNX8550FB_HEIGHT_FAKEHD * PNX8550FB_LINE_SIZE_FAKEHD)
 
 #define PNX8550FB_QVCP1_BASE 0xBBF0E000
