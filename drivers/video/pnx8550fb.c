@@ -68,22 +68,6 @@ struct pnx8550fb_par {
 	dma_addr_t filterlayer;
 };
 
-// filter layer width in pixels
-#define PNX8550FB_FILTERLAYER_WIDTH 4
-// filter layer width in bytes; has to be a multiple of 8.
-#define PNX8550FB_FILTERLAYER_STRIDE \
-	(PNX8550FB_FILTERLAYER_WIDTH * sizeof(uint16_t))
-static uint16_t pnx8550fb_filterlayer[1080 * PNX8550FB_FILTERLAYER_WIDTH]
-		__aligned(8) = {
-#define _LINE(x) (x) << 8, (x) << 8, (x) << 8, (x) << 8,
-#define _BLOCK _LINE(0) _LINE(127) _LINE(255) _LINE(255) _LINE(127) _LINE(0)
-	// 180 6-line blocks for 1080 lines total
-#define _5BLOCKS _BLOCK _BLOCK _BLOCK _BLOCK _BLOCK
-#define _20BLOCKS _5BLOCKS _5BLOCKS _5BLOCKS _5BLOCKS
-	_20BLOCKS _20BLOCKS _20BLOCKS
-	_20BLOCKS _20BLOCKS _20BLOCKS
-	_20BLOCKS _20BLOCKS _20BLOCKS
-};
 // sets a single register over I²C
 static void i2c_set_reg(struct i2c_adapter *bus, unsigned char addr,
 		unsigned char reg, unsigned char value)
@@ -715,19 +699,19 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 	switch (par->std) {
 	case STD_FAKEHD:
 		// primary display layer
-		qvcp_set_reg(par, 0x230, 0x00800014);
-		qvcp_set_reg(par, 0x234, 0x021C0500);
+		qvcp_set_reg(par, 0x230, 0x80800028);
+		qvcp_set_reg(par, 0x234, 0x021c0500);
 		// 720 lines in, 1080 lines out, ie. scale by 1.5 vertically.
 		qvcp_set_reg(par, 0x220, 0x0000aaaa);
 		qvcp_set_reg(par, 0x23c, 0x20);
 		// filtering layer. data width is just 4 16-bit pixels for minimal
 		// 8-byte alignment; hardware repeats the last (ie. the fourth)
 		// pixel until the line is complete.
-		qvcp_set_reg(par, 0x430, 0x00800014);
+		qvcp_set_reg(par, 0x430, 0x80800028);
 		qvcp_set_reg(par, 0x434, 0x021c0004);
 		qvcp_set_reg(par, 0x43c, 0x20);
 		// secondary display layer. starts 1 line furter up, so it has to
-		// start in "the other" field, and also inherits alpha from the
+		// be enabled in "the other" field, and also inherits alpha from the
 		// filter layer below.
 		qvcp_set_reg(par, 0x630, 0x80800027);
 		qvcp_set_reg(par, 0x634, 0x021c0500);
@@ -773,7 +757,7 @@ static void pnx8550fb_setup_qvcp(struct pnx8550fb_par *par)
 		qvcp_set_reg(par, 0x494, 0x0000ffff);
 		qvcp_set_reg(par, 0x498, 0x00000000);
 		// secondary video layer. alpha actually comes from the filter layer
-		// below it.
+		// below it. buffers swapped because it starts in "the other" field.
 		qvcp_set_reg(par, 0x600, par->iobase);
 		qvcp_set_reg(par, 0x60c, par->iobase + PNX8550FB_STRIDE);
 		qvcp_set_reg(par, 0x604, 2 * PNX8550FB_STRIDE);
@@ -1178,11 +1162,12 @@ static struct fb_ops ops = {
 
 static int pnx8550_framebuffer_probe(struct platform_device *dev)
 {
-	int retval = -ENOMEM;
+	int line, retval = -ENOMEM;
 	struct pnx8550fb_par *par;
 	struct fb_info *info;
 	dma_addr_t fb_base;
 	void *fb_ptr;
+	uint32_t *filterlayer;
 	char *standard;
 
 	info = framebuffer_alloc(sizeof(struct pnx8550fb_par)
@@ -1196,7 +1181,8 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	par->base = NULL;
 	par->filterlayer = 0;
 
-	fb_ptr = dma_alloc_noncoherent(&dev->dev, PNX8550FB_SIZE, &fb_base,
+	fb_ptr = dma_alloc_noncoherent(&dev->dev,
+			PNX8550FB_SIZE + PNX8550FB_FILTERLAYER_ALLOC, &fb_base,
 			GFP_USER);
 	if (!fb_ptr) {
 		printk(KERN_ERR "pnx8550fb failed to allocate screen memory\n");
@@ -1207,11 +1193,29 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	par->size = PNX8550FB_SIZE;
 	par->std = STD_UNSET;
 
-	par->filterlayer = dma_map_single(&dev->dev, pnx8550fb_filterlayer,
-			sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
-	if (dma_mapping_error(&dev->dev, par->filterlayer)) {
-		printk(KERN_ERR "pnx8550fb failed to map fakeHD filter layer\n");
-		goto err2;
+	/* the QVCP can repeat every second line AABCCD, thus scaling by 3/2.
+	 * but for an interlaced raster, the output will be ABABCD..., which is
+	 * visually ugly. thus we alpha-blend between layers 1 and 3, to get a
+	 * nice smooth transition:
+	 *
+	 * line  layer1  layer3  alpha1  alpha3  result
+	 * -1    N/A     1       N/A     N/A     none (blanked)
+	 * 0     1       2       100%    0%      1
+	 * 1     2       1       50%     50%     (1+2)/2
+	 * 2     1       2       0%      100%    2
+	 * 3     2       3       0%      100%    3
+	 * 4     3       4       50%     50%     (3+4)/2
+	 * 5     4       5       100%    0%      4
+	 */
+	par->filterlayer = fb_base + PNX8550FB_SIZE;
+	filterlayer = fb_ptr + PNX8550FB_SIZE;
+	for (line = 0; line < PNX8550FB_FILTERLAYER_HEIGHT; line += 6) {
+		*filterlayer++ = 0x00000000; *filterlayer++ = 0x00000000; // layer 1
+		*filterlayer++ = 0x7f007f00; *filterlayer++ = 0x7f007f00; // 50/50
+		*filterlayer++ = 0xff00ff00; *filterlayer++ = 0xff00ff00; // layer 3
+		*filterlayer++ = 0xff00ff00; *filterlayer++ = 0xff00ff00; // layer 3
+		*filterlayer++ = 0x7f007f00; *filterlayer++ = 0x7f007f00; // 50/50
+		*filterlayer++ = 0x00000000; *filterlayer++ = 0x00000000; // layer 1
 	}
 	// hardware setup. should probably be defined in the platform_device
 	// instead of being hardcoded.
@@ -1239,7 +1243,7 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 	retval = register_framebuffer(info);
 	if (retval) {
 		printk(KERN_ERR "pnx8550fb failed to register: %d\n", retval);
-		goto err3;
+		goto err2;
 	}
 
 	switch (par->std) {
@@ -1261,11 +1265,8 @@ static int pnx8550_framebuffer_probe(struct platform_device *dev)
 			(unsigned int) fb_ptr);
 	return 0;
 
-err3:
-	pnx8550fb_shutdown_display(info->par);
-	dma_unmap_single(&dev->dev, par->filterlayer,
-			sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
 err2:
+	pnx8550fb_shutdown_display(info->par);
 	dma_free_noncoherent(&dev->dev, PNX8550FB_SIZE, par->base, GFP_USER);
 err1:
 	framebuffer_release(info);
@@ -1297,8 +1298,6 @@ static int pnx8550_framebuffer_remove(struct platform_device *dev)
 
 	// release memory
 	dma_free_noncoherent(&dev->dev, PNX8550FB_SIZE, par->base, GFP_USER);
-	dma_unmap_single(&dev->dev, par->filterlayer,
-			sizeof(pnx8550fb_filterlayer), DMA_TO_DEVICE);
 	framebuffer_release(info);
 	return 0;
 }
