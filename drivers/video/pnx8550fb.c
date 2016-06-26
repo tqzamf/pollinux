@@ -69,37 +69,58 @@ struct pnx8550fb_par {
 };
 
 // sets a single register over I²C
-static void i2c_set_reg(struct i2c_adapter *bus, unsigned char addr,
-		unsigned char reg, unsigned char value)
+static void i2c_set_regs(struct i2c_adapter *bus, unsigned char addr,
+		uint8_t *data, uint8_t len)
 {
-    unsigned char data[2] = { reg, value };
     int err;
 	struct i2c_msg msg = {
 		.addr = addr,
 		.flags = 0,
-		.len = 2,
+		.len = len,
 		.buf = data,
 	};
 
+	// this timeouts occasionally. retry once to try and fix it.
 	err = i2c_transfer(bus, &msg, 1);
-	if (err != 1)
+	if (err != 1) {
 		printk(KERN_ERR
-			"%s: error %d writing device %02x register %02x = %02x\n",
-			__func__, err, addr, reg, value);
+			"%s: error %d writing device %02x register %02x; retrying\n",
+			__func__, err, addr, data[0]);
+
+		err = i2c_transfer(bus, &msg, 1);
+		if (err != 1)
+			printk(KERN_ERR
+				"%s: error %d writing device %02x register %02x; giving up\n",
+				__func__, err, addr, data[0]);
+	}
 }
 
 // sets a single register in the primary video channel of ANABEL
-static void anabel_video_set_reg(struct pnx8550fb_par *par,
-		unsigned char reg, unsigned char value)
+static void anabel_video_set_regs(struct pnx8550fb_par *par, uint8_t *table)
 {
-	i2c_set_reg(par->i2c, par->video_addr, reg, value);
+	while (table[0]) {
+		uint8_t len = table[0];
+		i2c_set_regs(par->i2c, par->video_addr, &table[1], len + 1);
+		table += len + 2;
+	}
+}
+static void anabel_video_set_dac_power(struct pnx8550fb_par *par,
+		int enable)
+{
+	unsigned char msg[2] = { 0xa5 };
+	if (enable)
+		msg[1] = 0x30;
+	else
+		msg[1] = 0x31;
+	i2c_set_regs(par->i2c, par->video_addr, msg, 2);
 }
 
 // sets a single clock register in the primary video channel of ANABEL
-static void anabel_clock_set_reg(struct pnx8550fb_par *par,
-		unsigned char reg, unsigned char value)
+static void anabel_clock_set_reg(struct pnx8550fb_par *par, uint8_t reg,
+		uint8_t value)
 {
-	i2c_set_reg(par->i2c, par->clock_addr, reg, value);
+	uint8_t msg[2] = { reg, value };
+	i2c_set_regs(par->i2c, par->clock_addr, msg, 2);
 }
 
 // sets a single register in the QVCP
@@ -123,321 +144,198 @@ static uint32_t qvcp_get_reg(struct pnx8550fb_par *par,
 	} while (0)
 
 
-// configures Anabel (PNX8510) for PAL/NTSC
-static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
-{
+static uint8_t pnx8550fb_setup_anabel_common[] = {
 	// the PNX8510 datasheet lists all undefined registers as "Must be
 	// initialized to zero". these are the ones that are actually
 	// initialized in the NXP splash screen code; the rest probably
 	// doesn't matter.
-	anabel_video_set_reg(par, 0x60, 0x00);
-	anabel_video_set_reg(par, 0x7d, 0x00);
-
+	0x01, 0x60, 0x00,
+	0x01, 0x7d, 0x00,
 	// disable insertion of wide screen signalling, copy guard,
 	// video progamming system, closed captioning & teletext
-	anabel_video_set_reg(par, 0x27, 0x00);
-	anabel_video_set_reg(par, 0x2c, 0x00);
-	anabel_video_set_reg(par, 0x54, 0x00);
-	anabel_video_set_reg(par, 0x6f, 0x00);
+	0x01, 0x27, 0x00,
+	0x01, 0x2c, 0x00,
+	0x01, 0x54, 0x00,
+	0x01, 0x6f, 0x00,
 	// don't perform signature analysis
-	anabel_video_set_reg(par, 0xba, 0x70);
+	0x01, 0xba, 0x70,
+	0x00 // EOF
+};
 
+static uint8_t pnx8550fb_setup_anabel_fakehd[] = {
+	// compiled screen layout for 1080i50 at 99MHz
+	// value 0: low:   -512 -358 -358
+	0x04, 0xbe, 0x00, 0x9a, 0x9a, 0x2a,
+	0x01, 0x98, 0x00,
+	0x01, 0x98, 0x01,
+	// value 1: blank: -205    0    0
+	0x04, 0xbe, 0x33, 0x00, 0x00, 0x30,
+	0x01, 0x98, 0x01,
+	0x01, 0x98, 0x02,
+	// value 2: high:  +102 +358 +358
+	0x04, 0xbe, 0x66, 0x66, 0x66, 0x05,
+	0x01, 0x98, 0x02,
+	0x01, 0x98, 0x03,
+	// pattern 1: hsync: 29x low, 29x high, 99x blank
+	0x08, 0x87, 0xc8, 0x81, 0x72, 0x90, 0x62, 0x00, 0x00, 0x00,
+	0x01, 0x8e, 0x01,
+	// pattern 2: halfsync: 587x low, 136x blank
+	0x08, 0x87, 0xa8, 0x64, 0x1e, 0x02, 0x00, 0x00, 0x00, 0x01,
+	0x01, 0x8e, 0x02,
+	// pattern 3: halfblank: 587x blank, 136x blank
+	0x08, 0x87, 0xa9, 0x64, 0x1e, 0x02, 0x00, 0x00, 0x00, 0x02,
+	0x01, 0x8e, 0x03,
+	// pattern 4: blank: 640x blank !640x, 640x blank, 323x blank
+	0x08, 0x87, 0xf9, 0x67, 0xfe, 0x99, 0x42, 0x01, 0x00, 0x03,
+	0x01, 0x8e, 0x04,
+	// pattern 5: video: 640x *blank, 640x *blank, 323x blank
+	0x08, 0x87, 0xf1, 0x67, 0xfc, 0x99, 0x42, 0x01, 0x00, 0x04,
+	0x01, 0x8e, 0x05,
+	// line type 1: syncsync:   hsync, halfsync,  hsync, halfsync
+	0x04, 0x83, 0x51, 0x04, 0x00, 0x00,
+	0x01, 0x86, 0x01,
+	// line type 2: blankblank: hsync, halfblank, hsync, halfblank
+	0x04, 0x83, 0x59, 0x06, 0x00, 0x01,
+	0x01, 0x86, 0x02,
+	// line type 3: syncblank:  hsync, halfsync,  hsync, halfblank
+	0x04, 0x83, 0x51, 0x06, 0x00, 0x02,
+	0x01, 0x86, 0x03,
+	// line type 4: blanksync:  hsync, halfblank, hsync, halfsync
+	0x04, 0x83, 0x59, 0x04, 0x00, 0x03,
+	0x01, 0x86, 0x04,
+	// line type 5: blank: hsync, blank!
+	0x04, 0x83, 0x21, 0x00, 0x00, 0x04,
+	0x01, 0x86, 0x05,
+	// line type 6: video: hsync, video
+	0x04, 0x83, 0x29, 0x00, 0x00, 0x05,
+	0x01, 0x86, 0x06,
+	// line count 0: 5x syncsync
+	0x03, 0x80, 0x05, 0x04, 0x00,
+	0x01, 0x82, 0x01,
+	// line count 1: 1x blankblank
+	0x03, 0x80, 0x01, 0x08, 0x01,
+	0x01, 0x82, 0x02,
+	// line count 2: 14x blank !14x
+	0x03, 0x80, 0x0e, 0x14, 0x02,
+	0x01, 0x82, 0x03,
+	// line count 3: 540x video
+	0x03, 0x80, 0x1c, 0x1a, 0x03,
+	0x01, 0x82, 0x04,
+	// line count 4: 2x blank
+	0x03, 0x80, 0x02, 0x14, 0x04,
+	0x01, 0x82, 0x05,
+	// line count 5: 1x blanksync
+	0x03, 0x80, 0x01, 0x10, 0x05,
+	0x01, 0x82, 0x06,
+	// line count 6: 4x syncsync
+	0x03, 0x80, 0x04, 0x04, 0x06,
+	0x01, 0x82, 0x07,
+	// line count 7: 1x syncblank
+	0x03, 0x80, 0x01, 0x0c, 0x07,
+	0x01, 0x82, 0x08,
+	// line count 8: 15x blank
+	0x03, 0x80, 0x0f, 0x14, 0x08,
+	0x01, 0x82, 0x09,
+	// line count 9: 540x video
+	0x03, 0x80, 0x1c, 0x1a, 0x09,
+	0x01, 0x82, 0x0a,
+	// line count 10: 2x blank
+	0x03, 0x80, 0x02, 0x14, 0x0a,
+	0x01, 0x82, 0x0b,
+	// line count EOF
+	0x03, 0x80, 0x00, 0x00, 0x0b,
+	0x01, 0x82, 0x0c,
+	// trigger position
+	0x06, 0x98, 0x13, 0x0e, 0x00, 0x7f, 0x02, 0x20,
+	// screen size: 1760x1125 !4x7
+	0x08, 0xae, 0x64, 0x04, 0xdf, 0x06, 0x07, 0x00, 0x04, 0x00,
+
+	// blank offsets + gain for Y/U/V
+	0x03, 0xc7, 0x80, 0x80, 0x80,
+	0x01, 0xbc, 0x00,
+	0x03, 0xa8, 0x30, 0x00, 0x00,
+	// DAC configured for YUV / RGB (Y/C disabled)
+	0x01, 0x2d, 0x00,
+	// set HD (not SD) mode; 10-bit YUVhd 4:2:2 single-D1 interface
+	0x01, 0x3a, 0x47,
+	0x01, 0x95, 0x84,
+	// insert generated sync signal into all (!) components
+	0x01, 0xa6, 0xfd,
+	// blank the SD video encoder
+	0x01, 0x6e, 0x40,
+	0x00 // EOF
+};
+
+static uint8_t pnx8550fb_setup_anabel_ntsc[] = {
+	// color burst config
+	0x02, 0x28, 0x25, 0x1d,
+	0x01, 0x5a, 0x88,
+	// chroma encoding config
+	0x01, 0x61, 0x11,
+	0x04, 0x63, 0x1f, 0x7c, 0xf0, 0x21,
+	0x03, 0x6c, 0xf2, 0x03, 0xD0,
+	// screen geometry
+	0x03, 0x70, 0xfb, 0x90, 0x60,
+	0x03, 0x7a, 0x00, 0x05, 0x40,
+	// YUV encoding & pedestal
+	0x01, 0xa0, 0x00,
+	0x03, 0xa2, 0x0d, 0x80, 0x80,
+	0x05, 0x5b, 0x7d, 0xaf, 0x3e, 0x32, 0x32,
+	0x01, 0x62, 0x4c,
+	// DAC output levels
+	0x05, 0xc2, 0x1e, 0x0A, 0x0A, 0x0A, 0x01,
+	// DAC configured for CVBS + RGB (instead of Y/C)
+	0x01, 0x2d, 0x40,
+	// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
+	0x01, 0x3a, 0x48,
+	0x01, 0x95, 0x80,
+	// unblank the screen
+	0x01, 0x6e, 0x00,
+	0x00 // EOF
+};
+
+static uint8_t pnx8550fb_setup_anabel_pal[] = {
+	// color burst config
+	0x02, 0x28, 0x21, 0x1d,
+	0x01, 0x5a, 0x00,
+	// chroma encoding config
+	0x01, 0x61, 0x06,
+	0x04, 0x63, 0xcb, 0x8a, 0x09, 0x2a,
+	0x03, 0x6c, 0x02, 0x22, 0x60,
+	// screen geometry
+	0x03, 0x70, 0x1a, 0x9f, 0x61,
+	0x03, 0x7a, 0x16, 0x37, 0x40,
+	// YUV encoding & pedestal
+	0x01, 0xa0, 0x00,
+	0x03, 0xa2, 0x10, 0x80, 0x80,
+	0x05, 0x5b, 0x89, 0xbe, 0x37, 0x39, 0x39,
+	0x01, 0x62, 0x38,
+	// DAC output levels
+	0x05, 0xc2, 0x1f, 0x0A, 0x0A, 0x0A, 0x00,
+	// DAC configured for CVBS + RGB (instead of Y/C)
+	0x01, 0x2d, 0x40,
+	// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
+	0x01, 0x3a, 0x48,
+	0x01, 0x95, 0x80,
+	// unblank the screen
+	0x01, 0x6e, 0x00,
+	0x00 // EOF
+};
+
+// configures Anabel (PNX8510) for PAL/NTSC
+static void pnx8550fb_setup_anabel(struct pnx8550fb_par *par)
+{
+	anabel_video_set_regs(par, pnx8550fb_setup_anabel_common);
     switch (par->std) {
 	case STD_FAKEHD:
-		// compiled screen layout for 1080i50 at 99MHz
-		// value 0: low:   -512 -358 -358
-		anabel_video_set_reg(par, 0xbe, 0x00);
-		anabel_video_set_reg(par, 0xbf, 0x9a);
-		anabel_video_set_reg(par, 0xc0, 0x9a);
-		anabel_video_set_reg(par, 0xc1, 0x2a);
-		anabel_video_set_reg(par, 0x98, 0x00);
-		anabel_video_set_reg(par, 0x98, 0x01);
-		// value 1: blank: -205    0    0
-		anabel_video_set_reg(par, 0xbe, 0x33);
-		anabel_video_set_reg(par, 0xbf, 0x00);
-		anabel_video_set_reg(par, 0xc0, 0x00);
-		anabel_video_set_reg(par, 0xc1, 0x30);
-		anabel_video_set_reg(par, 0x98, 0x01);
-		anabel_video_set_reg(par, 0x98, 0x02);
-		// value 2: high:  +102 +358 +358
-		anabel_video_set_reg(par, 0xbe, 0x66);
-		anabel_video_set_reg(par, 0xbf, 0x66);
-		anabel_video_set_reg(par, 0xc0, 0x66);
-		anabel_video_set_reg(par, 0xc1, 0x05);
-		anabel_video_set_reg(par, 0x98, 0x02);
-		anabel_video_set_reg(par, 0x98, 0x03);
-		// pattern 1: hsync: 29x low, 29x high, 99x blank
-		anabel_video_set_reg(par, 0x87, 0xc8);
-		anabel_video_set_reg(par, 0x88, 0x81);
-		anabel_video_set_reg(par, 0x89, 0x72);
-		anabel_video_set_reg(par, 0x8a, 0x90);
-		anabel_video_set_reg(par, 0x8b, 0x62);
-		anabel_video_set_reg(par, 0x8c, 0x00);
-		anabel_video_set_reg(par, 0x8d, 0x00);
-		anabel_video_set_reg(par, 0x8e, 0x00);
-		anabel_video_set_reg(par, 0x8e, 0x01);
-		// pattern 2: halfsync: 587x low, 136x blank
-		anabel_video_set_reg(par, 0x87, 0xa8);
-		anabel_video_set_reg(par, 0x88, 0x64);
-		anabel_video_set_reg(par, 0x89, 0x1e);
-		anabel_video_set_reg(par, 0x8a, 0x02);
-		anabel_video_set_reg(par, 0x8b, 0x00);
-		anabel_video_set_reg(par, 0x8c, 0x00);
-		anabel_video_set_reg(par, 0x8d, 0x00);
-		anabel_video_set_reg(par, 0x8e, 0x01);
-		anabel_video_set_reg(par, 0x8e, 0x02);
-		// pattern 3: halfblank: 587x blank, 136x blank
-		anabel_video_set_reg(par, 0x87, 0xa9);
-		anabel_video_set_reg(par, 0x88, 0x64);
-		anabel_video_set_reg(par, 0x89, 0x1e);
-		anabel_video_set_reg(par, 0x8a, 0x02);
-		anabel_video_set_reg(par, 0x8b, 0x00);
-		anabel_video_set_reg(par, 0x8c, 0x00);
-		anabel_video_set_reg(par, 0x8d, 0x00);
-		anabel_video_set_reg(par, 0x8e, 0x02);
-		anabel_video_set_reg(par, 0x8e, 0x03);
-		// pattern 4: blank: 640x blank !640x, 640x blank, 323x blank
-		anabel_video_set_reg(par, 0x87, 0xf9);
-		anabel_video_set_reg(par, 0x88, 0x67);
-		anabel_video_set_reg(par, 0x89, 0xfe);
-		anabel_video_set_reg(par, 0x8a, 0x99);
-		anabel_video_set_reg(par, 0x8b, 0x42);
-		anabel_video_set_reg(par, 0x8c, 0x01);
-		anabel_video_set_reg(par, 0x8d, 0x00);
-		anabel_video_set_reg(par, 0x8e, 0x03);
-		anabel_video_set_reg(par, 0x8e, 0x04);
-		// pattern 5: video: 640x *blank, 640x *blank, 323x blank
-		anabel_video_set_reg(par, 0x87, 0xf1);
-		anabel_video_set_reg(par, 0x88, 0x67);
-		anabel_video_set_reg(par, 0x89, 0xfc);
-		anabel_video_set_reg(par, 0x8a, 0x99);
-		anabel_video_set_reg(par, 0x8b, 0x42);
-		anabel_video_set_reg(par, 0x8c, 0x01);
-		anabel_video_set_reg(par, 0x8d, 0x00);
-		anabel_video_set_reg(par, 0x8e, 0x04);
-		anabel_video_set_reg(par, 0x8e, 0x05);
-		// line type 1: syncsync:   hsync, halfsync,  hsync, halfsync
-		anabel_video_set_reg(par, 0x83, 0x51);
-		anabel_video_set_reg(par, 0x84, 0x04);
-		anabel_video_set_reg(par, 0x85, 0x00);
-		anabel_video_set_reg(par, 0x86, 0x00);
-		anabel_video_set_reg(par, 0x86, 0x01);
-		// line type 2: blankblank: hsync, halfblank, hsync, halfblank
-		anabel_video_set_reg(par, 0x83, 0x59);
-		anabel_video_set_reg(par, 0x84, 0x06);
-		anabel_video_set_reg(par, 0x85, 0x00);
-		anabel_video_set_reg(par, 0x86, 0x01);
-		anabel_video_set_reg(par, 0x86, 0x02);
-		// line type 3: syncblank:  hsync, halfsync,  hsync, halfblank
-		anabel_video_set_reg(par, 0x83, 0x51);
-		anabel_video_set_reg(par, 0x84, 0x06);
-		anabel_video_set_reg(par, 0x85, 0x00);
-		anabel_video_set_reg(par, 0x86, 0x02);
-		anabel_video_set_reg(par, 0x86, 0x03);
-		// line type 4: blanksync:  hsync, halfblank, hsync, halfsync
-		anabel_video_set_reg(par, 0x83, 0x59);
-		anabel_video_set_reg(par, 0x84, 0x04);
-		anabel_video_set_reg(par, 0x85, 0x00);
-		anabel_video_set_reg(par, 0x86, 0x03);
-		anabel_video_set_reg(par, 0x86, 0x04);
-		// line type 5: blank: hsync, blank!
-		anabel_video_set_reg(par, 0x83, 0x21);
-		anabel_video_set_reg(par, 0x84, 0x00);
-		anabel_video_set_reg(par, 0x85, 0x00);
-		anabel_video_set_reg(par, 0x86, 0x04);
-		anabel_video_set_reg(par, 0x86, 0x05);
-		// line type 6: video: hsync, video
-		anabel_video_set_reg(par, 0x83, 0x29);
-		anabel_video_set_reg(par, 0x84, 0x00);
-		anabel_video_set_reg(par, 0x85, 0x00);
-		anabel_video_set_reg(par, 0x86, 0x05);
-		anabel_video_set_reg(par, 0x86, 0x06);
-		// line count 0: 5x syncsync
-		anabel_video_set_reg(par, 0x80, 0x05);
-		anabel_video_set_reg(par, 0x81, 0x04);
-		anabel_video_set_reg(par, 0x82, 0x00);
-		anabel_video_set_reg(par, 0x82, 0x01);
-		// line count 1: 1x blankblank
-		anabel_video_set_reg(par, 0x80, 0x01);
-		anabel_video_set_reg(par, 0x81, 0x08);
-		anabel_video_set_reg(par, 0x82, 0x01);
-		anabel_video_set_reg(par, 0x82, 0x02);
-		// line count 2: 14x blank !14x
-		anabel_video_set_reg(par, 0x80, 0x0e);
-		anabel_video_set_reg(par, 0x81, 0x14);
-		anabel_video_set_reg(par, 0x82, 0x02);
-		anabel_video_set_reg(par, 0x82, 0x03);
-		// line count 3: 540x video
-		anabel_video_set_reg(par, 0x80, 0x1c);
-		anabel_video_set_reg(par, 0x81, 0x1a);
-		anabel_video_set_reg(par, 0x82, 0x03);
-		anabel_video_set_reg(par, 0x82, 0x04);
-		// line count 4: 2x blank
-		anabel_video_set_reg(par, 0x80, 0x02);
-		anabel_video_set_reg(par, 0x81, 0x14);
-		anabel_video_set_reg(par, 0x82, 0x04);
-		anabel_video_set_reg(par, 0x82, 0x05);
-		// line count 5: 1x blanksync
-		anabel_video_set_reg(par, 0x80, 0x01);
-		anabel_video_set_reg(par, 0x81, 0x10);
-		anabel_video_set_reg(par, 0x82, 0x05);
-		anabel_video_set_reg(par, 0x82, 0x06);
-		// line count 6: 4x syncsync
-		anabel_video_set_reg(par, 0x80, 0x04);
-		anabel_video_set_reg(par, 0x81, 0x04);
-		anabel_video_set_reg(par, 0x82, 0x06);
-		anabel_video_set_reg(par, 0x82, 0x07);
-		// line count 7: 1x syncblank
-		anabel_video_set_reg(par, 0x80, 0x01);
-		anabel_video_set_reg(par, 0x81, 0x0c);
-		anabel_video_set_reg(par, 0x82, 0x07);
-		anabel_video_set_reg(par, 0x82, 0x08);
-		// line count 8: 15x blank
-		anabel_video_set_reg(par, 0x80, 0x0f);
-		anabel_video_set_reg(par, 0x81, 0x14);
-		anabel_video_set_reg(par, 0x82, 0x08);
-		anabel_video_set_reg(par, 0x82, 0x09);
-		// line count 9: 540x video
-		anabel_video_set_reg(par, 0x80, 0x1c);
-		anabel_video_set_reg(par, 0x81, 0x1a);
-		anabel_video_set_reg(par, 0x82, 0x09);
-		anabel_video_set_reg(par, 0x82, 0x0a);
-		// line count 10: 2x blank
-		anabel_video_set_reg(par, 0x80, 0x02);
-		anabel_video_set_reg(par, 0x81, 0x14);
-		anabel_video_set_reg(par, 0x82, 0x0a);
-		anabel_video_set_reg(par, 0x82, 0x0b);
-		// line count EOF
-		anabel_video_set_reg(par, 0x80, 0x00);
-		anabel_video_set_reg(par, 0x81, 0x00);
-		anabel_video_set_reg(par, 0x82, 0x0b);
-		anabel_video_set_reg(par, 0x82, 0x0c);
-		// trigger position
-		anabel_video_set_reg(par, 0x98, 0x13);
-		anabel_video_set_reg(par, 0x99, 0x0e);
-		anabel_video_set_reg(par, 0x9a, 0x00);
-		anabel_video_set_reg(par, 0x9b, 0x7f);
-		anabel_video_set_reg(par, 0x9c, 0x02);
-		anabel_video_set_reg(par, 0x9d, 0x20);
-		// screen size: 1760x1125 !4x7
-		anabel_video_set_reg(par, 0xae, 0x64);
-		anabel_video_set_reg(par, 0xaf, 0x04);
-		anabel_video_set_reg(par, 0xb0, 0xdf);
-		anabel_video_set_reg(par, 0xb1, 0x06);
-		anabel_video_set_reg(par, 0xb2, 0x07);
-		anabel_video_set_reg(par, 0xb3, 0x00);
-		anabel_video_set_reg(par, 0xb4, 0x04);
-		anabel_video_set_reg(par, 0xb5, 0x00);
-		// blank offsets + gain for Y/U/V
-		anabel_video_set_reg(par, 0xc7, 0x80);
-		anabel_video_set_reg(par, 0xc8, 0x80);
-		anabel_video_set_reg(par, 0xc9, 0x80);
-		anabel_video_set_reg(par, 0xbc, 0x00);
-		anabel_video_set_reg(par, 0xa8, 0x30);
-		anabel_video_set_reg(par, 0xa9, 0x00);
-		anabel_video_set_reg(par, 0xaa, 0x00);
-		// DAC configured for YUV / RGB (Y/C disabled)
-		anabel_video_set_reg(par, 0x2d, 0x00);
-		// set HD (not SD) mode; 10-bit YUVhd 4:2:2 single-D1 interface
-		anabel_video_set_reg(par, 0x3a, 0x47);
-		anabel_video_set_reg(par, 0x95, 0x84);
-		// insert generated sync signal into all (!) components
-		anabel_video_set_reg(par, 0xa6, 0xfd);
-		// blank the SD video encoder
-		anabel_video_set_reg(par, 0x6e, 0x40);
+		anabel_video_set_regs(par, pnx8550fb_setup_anabel_fakehd);
 		break;
 	case STD_NTSC:
-		// color burst config
-		anabel_video_set_reg(par, 0x28, 0x25);
-		anabel_video_set_reg(par, 0x29, 0x1d);
-		anabel_video_set_reg(par, 0x5a, 0x88);
-		// chroma encoding config
-		anabel_video_set_reg(par, 0x61, 0x11);
-		anabel_video_set_reg(par, 0x63, 0x1f);
-		anabel_video_set_reg(par, 0x64, 0x7c);
-		anabel_video_set_reg(par, 0x65, 0xf0);
-		anabel_video_set_reg(par, 0x66, 0x21);
-		anabel_video_set_reg(par, 0x6c, 0xf2);
-		anabel_video_set_reg(par, 0x6d, 0x03);
-		anabel_video_set_reg(par, 0x6e, 0xD0);
-		// screen geometry
-		anabel_video_set_reg(par, 0x70, 0xfb);
-		anabel_video_set_reg(par, 0x71, 0x90);
-		anabel_video_set_reg(par, 0x72, 0x60);
-		anabel_video_set_reg(par, 0x7a, 0x00);
-		anabel_video_set_reg(par, 0x7b, 0x05);
-		anabel_video_set_reg(par, 0x7c, 0x40);
-		// YUV encoding & pedestal
-		anabel_video_set_reg(par, 0xa0, 0x00);
-		anabel_video_set_reg(par, 0xa2, 0x0d);
-		anabel_video_set_reg(par, 0xa3, 0x80);
-		anabel_video_set_reg(par, 0xa4, 0x80);
-		anabel_video_set_reg(par, 0x5b, 0x7d);
-		anabel_video_set_reg(par, 0x5c, 0xaf);
-		anabel_video_set_reg(par, 0x5d, 0x3e);
-		anabel_video_set_reg(par, 0x5e, 0x32);
-		anabel_video_set_reg(par, 0x5f, 0x32);
-		anabel_video_set_reg(par, 0x62, 0x4c);
-		// DAC output levels
-		anabel_video_set_reg(par, 0xc2, 0x1e);
-		anabel_video_set_reg(par, 0xc3, 0x0A);
-		anabel_video_set_reg(par, 0xc4, 0x0A);
-		anabel_video_set_reg(par, 0xc5, 0x0A);
-		anabel_video_set_reg(par, 0xc6, 0x01);
-		// DAC configured for CVBS + RGB (instead of Y/C)
-		anabel_video_set_reg(par, 0x2d, 0x40);
-		// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
-		anabel_video_set_reg(par, 0x3a, 0x48);
-		anabel_video_set_reg(par, 0x95, 0x80);
-		// unblank the screen
-		anabel_video_set_reg(par, 0x6e, 0x00);
+		anabel_video_set_regs(par, pnx8550fb_setup_anabel_ntsc);
 		break;
 	default: // default is PAL
 	case STD_PAL:
-		// color burst config
-		anabel_video_set_reg(par, 0x28, 0x21);
-		anabel_video_set_reg(par, 0x29, 0x1d);
-		anabel_video_set_reg(par, 0x5a, 0x00);
-		// chroma encoding config
-		anabel_video_set_reg(par, 0x61, 0x06);
-		anabel_video_set_reg(par, 0x63, 0xcb);
-		anabel_video_set_reg(par, 0x64, 0x8a);
-		anabel_video_set_reg(par, 0x65, 0x09);
-		anabel_video_set_reg(par, 0x66, 0x2a);
-		anabel_video_set_reg(par, 0x6c, 0x02);
-		anabel_video_set_reg(par, 0x6d, 0x22);
-		anabel_video_set_reg(par, 0x6e, 0x60);
-		// screen geometry
-		anabel_video_set_reg(par, 0x70, 0x1a);
-		anabel_video_set_reg(par, 0x71, 0x9f);
-		anabel_video_set_reg(par, 0x72, 0x61);
-		anabel_video_set_reg(par, 0x7a, 0x16);
-		anabel_video_set_reg(par, 0x7b, 0x37);
-		anabel_video_set_reg(par, 0x7c, 0x40);
-		// YUV encoding & pedestal
-		anabel_video_set_reg(par, 0xa0, 0x00);
-		anabel_video_set_reg(par, 0xa2, 0x10);
-		anabel_video_set_reg(par, 0xa3, 0x80);
-		anabel_video_set_reg(par, 0xa4, 0x80);
-		anabel_video_set_reg(par, 0x5b, 0x89);
-		anabel_video_set_reg(par, 0x5c, 0xbe);
-		anabel_video_set_reg(par, 0x5d, 0x37);
-		anabel_video_set_reg(par, 0x5e, 0x39);
-		anabel_video_set_reg(par, 0x5f, 0x39);
-		anabel_video_set_reg(par, 0x62, 0x38);
-		// DAC output levels
-		anabel_video_set_reg(par, 0xc2, 0x1f);
-		anabel_video_set_reg(par, 0xc3, 0x0A);
-		anabel_video_set_reg(par, 0xc4, 0x0A);
-		anabel_video_set_reg(par, 0xc5, 0x0A);
-		anabel_video_set_reg(par, 0xc6, 0x00);
-		// DAC configured for CVBS + RGB (instead of Y/C)
-		anabel_video_set_reg(par, 0x2d, 0x40);
-		// set SD (not HD) mode; 10-bit YUV 4:2:2 D1 interface
-		anabel_video_set_reg(par, 0x3a, 0x48);
-		anabel_video_set_reg(par, 0x95, 0x80);
-		// unblank the screen
-		anabel_video_set_reg(par, 0x6e, 0x00);
+		anabel_video_set_regs(par, pnx8550fb_setup_anabel_pal);
 		break;
 	}
 }
@@ -476,7 +374,7 @@ static void pnx8550fb_hw_suspend(struct pnx8550fb_par *par)
 	pnx8550fb_set_layers_enabled(par, false);
 
 	// power down the PNX8510 DACs
-	anabel_video_set_reg(par, 0xa5, 0x31);
+	anabel_video_set_dac_power(par, 0);
 	// stop the clocks
 	anabel_clock_set_reg(par, 0x01, 0x01);
 	anabel_clock_set_reg(par, 0x02, 0x01);
@@ -552,7 +450,7 @@ static void pnx8550fb_hw_resume(struct pnx8550fb_par *par)
         break;
     }
 	// power the PNX8510 DACs back up
-	anabel_video_set_reg(par, 0xa5, 0x30);
+	anabel_video_set_dac_power(par, 1);
 
 	// layer must be re-enabled separately if desired
 
