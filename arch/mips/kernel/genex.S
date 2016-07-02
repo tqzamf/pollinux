@@ -55,6 +55,12 @@ NESTED(except_vec3_generic, 0, sp)
 #if R5432_CP0_INTERRUPT_WAR
 	mfc0	k0, CP0_INDEX
 #endif
+#ifdef CONFIG_SOC_PNX8550
+	/* On PNX8550, CP0_CAUSE has a hazard when an exception occurs.
+	 * This is ridiculous.
+	 * But at least it's easy to fix. */
+	nop
+#endif
 	mfc0	k1, CP0_CAUSE
 	andi	k1, k1, 0x7c
 #ifdef CONFIG_64BIT

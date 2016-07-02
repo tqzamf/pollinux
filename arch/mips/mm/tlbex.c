@@ -951,6 +951,7 @@ build_get_pgde32(u32 **p, unsigned int tmp, unsigned int ptr)
 #endif
 	uasm_i_addu(p, ptr, tmp, ptr);
 #else
+	/* This probably fills another ridiculous hazard slot on PNX8550... */
 	UASM_i_LA_mostly(p, ptr, pgdc);
 #endif
 	uasm_i_mfc0(p, tmp, C0_BADVADDR); /* get faulting address */
