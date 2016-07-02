@@ -79,6 +79,10 @@ void local_flush_tlb_all(void)
 	write_c0_entrylo1(0);
 
 	entry = read_c0_wired();
+	if (current_cpu_type() == CPU_PR4450)
+		/* On PR4450, there aren't any "true" wired entries, only the ones
+		 * used for the bugfix. */
+		entry = 0;
 
 	/* Blast 'em all away. */
 	while (entry < current_cpu_data.tlbsize) {
@@ -343,6 +347,11 @@ void add_wired_entry(unsigned long entrylo0, unsigned long entrylo1,
 	unsigned long old_pagemask;
 	unsigned long old_ctx;
 
+	/* PR4450 uses the Wired register for its TLB fix, so we cannot add any
+	 * "true" wired TLB entries. */
+	if (current_cpu_type() == CPU_PR4450)
+		BUG();
+
 	ENTER_CRITICAL(flags);
 	/* Save old context and create impossible VPN2 value */
 	old_ctx = read_c0_entryhi();
@@ -386,11 +395,12 @@ void __cpuinit tlb_init(void)
 	 */
 	write_c0_pagemask(PM_DEFAULT_MASK);
 	
-#ifdef CONFIG_SOC_PNX8550
-	write_c0_wired(11);
-#else
-	write_c0_wired(0);
-#endif
+	if (current_cpu_type() == CPU_PR4450)
+		/* PR4450 splits TLB into instruction (1/3) and data (2/3) parts
+		 * to work around a TLB corruption bug. */
+		write_c0_wired(11);
+	else
+		write_c0_wired(0);
 
 	if (current_cpu_type() == CPU_R10000 ||
 	    current_cpu_type() == CPU_R12000 ||

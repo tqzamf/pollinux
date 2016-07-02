@@ -657,6 +657,15 @@ uasm_il_bne(u32 **p, struct uasm_reloc **r, unsigned int reg1,
 UASM_EXPORT_SYMBOL(uasm_il_bne);
 
 void __uasminit
+uasm_il_beq(u32 **p, struct uasm_reloc **r, unsigned int reg1,
+	unsigned int reg2, int lid)
+{
+	uasm_r_mips_pc16(r, *p, lid);
+	uasm_i_beq(p, reg1, reg2, 0);
+}
+UASM_EXPORT_SYMBOL(uasm_il_beq);
+
+void __uasminit
 uasm_il_bnez(u32 **p, struct uasm_reloc **r, unsigned int reg, int lid)
 {
 	uasm_r_mips_pc16(r, *p, lid);

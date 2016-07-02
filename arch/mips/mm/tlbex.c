@@ -157,11 +157,10 @@ enum label_id {
 	label_smp_pgtable_change,
 	label_r3000_write_probe_fail,
 	label_large_segbits_fault,
+	label_pr4450_instr_tlb1,
+	label_pr4450_instr_tlb2,
 #ifdef CONFIG_HUGETLB_PAGE
 	label_tlb_huge_update,
-#endif
-#ifdef CONFIG_PNX8550
-	label_pnx8550_bac_reset
 #endif
 };
 
@@ -179,11 +178,10 @@ UASM_L_LA(_nopage_tlbm)
 UASM_L_LA(_smp_pgtable_change)
 UASM_L_LA(_r3000_write_probe_fail)
 UASM_L_LA(_large_segbits_fault)
+UASM_L_LA(_pr4450_instr_tlb1)
+UASM_L_LA(_pr4450_instr_tlb2)
 #ifdef CONFIG_HUGETLB_PAGE
 UASM_L_LA(_tlb_huge_update)
-#endif
-#ifdef CONFIG_PNX8550
-UASM_L_LA(_pnx8550_bac_reset)
 #endif
 
 static int __cpuinitdata hazard_instance;
@@ -225,15 +223,6 @@ static inline void dump_handler(const u32 *handler, int count)
 
 	pr_debug("\t.set pop\n");
 }
-
-#ifdef CONFIG_PNX8550
-static void il_beq(u32 **p, struct uasm_reloc **r, unsigned int reg1,
-		   unsigned int reg2, enum label_id l)
-{
-	uasm_r_mips_pc16(r, *p, l);
-	uasm_i_beq(p, reg1, reg2, 0);
-}
-#endif
 
 
 /* The only general purpose registers allowed in TLB handlers. */
@@ -381,40 +370,6 @@ static void __cpuinit build_restore_work_registers(u32 **p)
  * conflicts for tlbmiss_handler_setup_pgd
  */
 extern unsigned long pgd_current[];
-
-#ifdef CONFIG_PNX8550
-static void __init build_pnx8550_bug_fix( u32 **p, struct uasm_label **l, struct uasm_reloc **r)
-{
-	/* load epc and badvaddr to k0 and k1 */
-	UASM_i_MFC0(p, K0, C0_EPC);
-    UASM_i_MFC0(p, K1, C0_BADVADDR);
-
-	/* branch if code entry  */
-	il_beq(p, r, K0, K1, label_pnx8550_bac_reset);
-	uasm_i_addiu(p, K0, K0, 4);
-
-	/* branch if code entry in BDS */
-	il_beq(p, r, K0, K1, label_pnx8550_bac_reset);
-	uasm_i_nop(p);
-	/* Write data tlb entry 11..31 */
-	uasm_i_tlbwr(p);
-	uasm_i_eret(p);
-	/* BAC Reset */
-	uasm_l_pnx8550_bac_reset(l, *p);
-	UASM_i_MFC0(p, K0, C0_CONFIGPR);
-	uasm_i_ori(p, K0, K0, (1<<14));
-	UASM_i_MTC0(p, K0, C0_CONFIGPR);
-
-	/* read random reg, sub 11, div by 2 */
-	UASM_i_MFC0(p, K1, C0_RANDOM);
-	uasm_i_addiu(p, K1, K1, -11);
-	uasm_i_srl(p, K1, K1, 1);
-
-	/* use as index for tlbwi */
-	UASM_i_MTC0(p, K1, C0_INDEX);
-	uasm_i_tlbwi(p);
-}
-#endif
 
 
 /*
@@ -1308,6 +1263,41 @@ build_fast_tlb_refill_handler (u32 **p, struct uasm_label **l,
  */
 #define MIPS64_REFILL_INSNS 32
 
+static void __cpuinit build_pr4450_tlb_refill_write_random(u32 **p,
+		struct uasm_label **l, struct uasm_reloc **r)
+{
+	/* if exception address == EPC or BDS, instruction fetch caused the TLB
+	 * exception, and we need the special workaround. */
+	UASM_i_MFC0(p, K0, C0_BADVADDR);
+	UASM_i_MFC0(p, K1, C0_EPC);
+	uasm_il_beq(p, r, K0, K1, label_pr4450_instr_tlb1);
+	uasm_i_addiu(p, K1, K1, 4); /* branch delay slot? */
+	uasm_il_beq(p, r, K0, K1, label_pr4450_instr_tlb2);
+	UASM_i_MFC0(p, K0, C0_RANDOM); /* speculative */
+
+	/* fastpath for data TLB: do the write and that's it */
+	uasm_i_tlbwr(p);
+	uasm_i_eret(p);
+
+	/* instruction TLB needs special attention */
+	uasm_l_pr4450_instr_tlb1(l, *p);
+	UASM_i_MFC0(p, K0, C0_RANDOM);
+	uasm_l_pr4450_instr_tlb2(l, *p);
+
+	/* map random 11 .. 31 to wired entries range 0 .. 10 */
+	uasm_i_addiu(p, K0, K0, -11);
+	uasm_i_srl(p, K0, K0, 1);
+	UASM_i_MTC0(p, K0, C0_INDEX);
+
+	/* "BAC reset" (that's the sum total of NXPs docs about it...) */
+	UASM_i_MFC0(p, K1, C0_CONFIGPR);
+	uasm_i_ori(p, K1, K1, (1<<14));
+	UASM_i_MTC0(p, K1, C0_CONFIGPR);
+
+	/* simulate random write by indexed write to remapped index */
+	uasm_i_tlbwi(p);
+}
+
 static void __cpuinit build_r4000_tlb_refill_handler(void)
 {
 	u32 *p = tlb_handler;
@@ -1361,12 +1351,11 @@ static void __cpuinit build_r4000_tlb_refill_handler(void)
 
 		build_get_ptep(&p, K0, K1);
 		build_update_entries(&p, K0, K1);
-#ifndef CONFIG_PNX8550
-		build_tlb_write_entry(&p, &l, &r, tlb_random);
+		if (current_cpu_type() == CPU_PR4450)
+			build_pr4450_tlb_refill_write_random(&p, &l, &r);
+		else
+			build_tlb_write_entry(&p, &l, &r, tlb_random);
 		uasm_l_leave(&l, p);
-#else
-	build_pnx8550_bug_fix(&p, &l, &r);
-#endif
 		uasm_i_eret(&p); /* return from trap */
 	}
 #ifdef CONFIG_HUGETLB_PAGE
